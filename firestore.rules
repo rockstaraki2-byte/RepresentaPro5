@@ -1,0 +1,176 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. Global Safety Net - Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming(request) {
+      return request.resource.data;
+    }
+
+    function existing(resource) {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints (Anti-Update-Gap & Value Poisoning Guards) ---
+
+    function isValidRepresentada(data) {
+      return data.keys().hasAll(['id', 'nomeFantasia', 'razaoSocial', 'cnpj', 'comissaoPadrao', 'empresaRepresentacaoId'])
+        && data.id is string && data.id.size() <= 100
+        && data.nomeFantasia is string && data.nomeFantasia.size() <= 250
+        && data.razaoSocial is string && data.razaoSocial.size() <= 250
+        && data.cnpj is string && data.cnpj.size() <= 25
+        && data.comissaoPadrao is number
+        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
+    }
+
+    function isValidCliente(data) {
+      return data.keys().hasAll(['id', 'nomeFantasia', 'cnpj', 'empresaRepresentacaoId'])
+        && data.id is string && data.id.size() <= 100
+        && data.nomeFantasia is string && data.nomeFantasia.size() <= 250
+        && data.cnpj is string && data.cnpj.size() <= 25
+        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
+    }
+
+    function isValidPedido(data) {
+      return data.keys().hasAll(['id', 'numeroPedido', 'clienteId', 'representadaId', 'dataPedido', 'valorTotal', 'comissaoPercentual', 'valorComissao', 'status', 'empresaRepresentacaoId', 'itens'])
+        && data.id is string && data.id.size() <= 100
+        && data.numeroPedido is string && data.numeroPedido.size() <= 100
+        && data.clienteId is string && data.clienteId.size() <= 100
+        && data.representadaId is string && data.representadaId.size() <= 100
+        && data.dataPedido is string && data.dataPedido.size() <= 50
+        && data.valorTotal is number
+        && data.comissaoPercentual is number
+        && data.valorComissao is number
+        && data.status is string && (data.status == 'Rascunho' || data.status == 'Pendente' || data.status == 'Faturado' || data.status == 'Pago' || data.status == 'Cancelado')
+        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100
+        && data.itens is list && data.itens.size() <= 150;
+    }
+
+    // Action checks for Pedido update
+    function isPedidoStatusUpdateOnly(request, resource) {
+      return incoming(request).diff(existing(resource)).affectedKeys().hasOnly(['status']);
+    }
+
+    function isValidProduto(data) {
+      return data.keys().hasAll(['id', 'codigo', 'nome', 'representadaId', 'precoVenda', 'unidade', 'ativo', 'empresaRepresentacaoId'])
+        && data.id is string && data.id.size() <= 100
+        && data.codigo is string && data.codigo.size() <= 100
+        && data.nome is string && data.nome.size() <= 250
+        && data.representadaId is string && data.representadaId.size() <= 100
+        && data.precoVenda is number
+        && data.unidade is string && data.unidade.size() <= 50
+        && data.ativo is bool
+        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
+    }
+
+    function isValidEmpresaRepresentacao(data) {
+      return data.keys().hasAll(['id', 'nomeFantasia', 'razaoSocial', 'cnpj', 'isDefault'])
+        && data.id is string && data.id.size() <= 100
+        && data.nomeFantasia is string && data.nomeFantasia.size() <= 250
+        && data.razaoSocial is string && data.razaoSocial.size() <= 250
+        && data.cnpj is string && data.cnpj.size() <= 25
+        && data.isDefault is bool;
+    }
+
+    function isValidUsuario(data) {
+      return data.keys().hasAll(['id', 'nome', 'email', 'role', 'ativo'])
+        && data.id is string && data.id.size() <= 100
+        && data.nome is string && data.nome.size() <= 250
+        && data.email is string && data.email.size() <= 250
+        && data.role is string && (data.role == 'Administrador' || data.role == 'Representante' || data.role == 'Vendedor')
+        && data.ativo is bool;
+    }
+
+    function isValidMetaVendas(data) {
+      return data.keys().hasAll(['metaMensal', 'anoMes', 'empresaRepresentacaoId'])
+        && data.metaMensal is number
+        && data.anoMes is string && data.anoMes.size() <= 15
+        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
+    }
+
+    function isValidTesteConexao(data) {
+      return data.keys().hasAll(['data', 'mensagem', 'usuario'])
+        && data.data is string && data.data.size() <= 100
+        && data.mensagem is string && data.mensagem.size() <= 300
+        && data.usuario is string && data.usuario.size() <= 150;
+    }
+
+    // --- Rules Definitions for Collections ---
+
+    // 1. Representadas
+    match /representadas/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidRepresentada(incoming(request));
+      allow update: if isValidId(id) && isValidRepresentada(incoming(request));
+      allow delete: if isValidId(id);
+    }
+
+    // 2. Clientes
+    match /clientes/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidCliente(incoming(request));
+      allow update: if isValidId(id) && isValidCliente(incoming(request));
+      allow delete: if isValidId(id);
+    }
+
+    // 3. Pedidos
+    match /pedidos/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidPedido(incoming(request));
+      allow update: if isValidId(id) && (
+        isValidPedido(incoming(request)) || 
+        isPedidoStatusUpdateOnly(request, resource)
+      );
+      allow delete: if isValidId(id);
+    }
+
+    // 4. Produtos
+    match /produtos/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidProduto(incoming(request));
+      allow update: if isValidId(id) && isValidProduto(incoming(request));
+      allow delete: if isValidId(id);
+    }
+
+    // 5. Empresas
+    match /empresas/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidEmpresaRepresentacao(incoming(request));
+      allow update: if isValidId(id) && isValidEmpresaRepresentacao(incoming(request));
+      allow delete: if isValidId(id);
+    }
+
+    // 6. Usuarios
+    match /usuarios/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidUsuario(incoming(request));
+      allow update: if isValidId(id) && isValidUsuario(incoming(request));
+      allow delete: if isValidId(id);
+    }
+
+    // 7. Meta
+    match /meta/{id} {
+      allow read: if true;
+      allow create, update: if isValidId(id) && isValidMetaVendas(incoming(request));
+      allow delete: if isValidId(id);
+    }
+
+    // 8. Teste Conexão (Used by Diagnostic button)
+    match /teste_conexao/{id} {
+      allow read: if true;
+      allow create: if isValidTesteConexao(incoming(request));
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
+

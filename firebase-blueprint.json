@@ -1,0 +1,156 @@
+{
+  "entities": {
+    "Representada": {
+      "title": "Representada",
+      "description": "Uma empresa representada fabricante parceira.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nomeFantasia": { "type": "string" },
+        "razaoSocial": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "comissaoPadrao": { "type": "number" },
+        "telefone": { "type": "string" },
+        "email": { "type": "string" },
+        "segmento": { "type": "string" },
+        "contato": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "empresaRepresentacaoId": { "type": "string" }
+      },
+      "required": ["id", "nomeFantasia", "razaoSocial", "cnpj", "comissaoPadrao", "empresaRepresentacaoId"]
+    },
+    "Cliente": {
+      "title": "Cliente",
+      "description": "Um cliente lojista da carteira.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nomeFantasia": { "type": "string" },
+        "razaoSocial": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "endereco": { "type": "string" },
+        "cidade": { "type": "string" },
+        "uf": { "type": "string" },
+        "telefone": { "type": "string" },
+        "email": { "type": "string" },
+        "contato": { "type": "string" },
+        "empresaRepresentacaoId": { "type": "string" }
+      },
+      "required": ["id", "nomeFantasia", "cnpj", "empresaRepresentacaoId"]
+    },
+    "Pedido": {
+      "title": "Pedido",
+      "description": "Um pedido de venda emitido.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "numeroPedido": { "type": "string" },
+        "clienteId": { "type": "string" },
+        "representadaId": { "type": "string" },
+        "dataPedido": { "type": "string" },
+        "valorTotal": { "type": "number" },
+        "comissaoPercentual": { "type": "number" },
+        "valorComissao": { "type": "number" },
+        "status": { "type": "string", "enum": ["Rascunho", "Pendente", "Faturado", "Pago", "Cancelado"] },
+        "observacoes": { "type": "string" },
+        "empresaRepresentacaoId": { "type": "string" },
+        "itens": {
+          "type": "array"
+        }
+      },
+      "required": ["id", "numeroPedido", "clienteId", "representadaId", "dataPedido", "valorTotal", "comissaoPercentual", "valorComissao", "status", "empresaRepresentacaoId", "itens"]
+    },
+    "Produto": {
+      "title": "Produto",
+      "description": "Um produto ofertado por uma representada.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "codigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "representadaId": { "type": "string" },
+        "precoVenda": { "type": "number" },
+        "unidade": { "type": "string" },
+        "descricao": { "type": "string" },
+        "ativo": { "type": "boolean" },
+        "empresaRepresentacaoId": { "type": "string" }
+      },
+      "required": ["id", "codigo", "nome", "representadaId", "precoVenda", "unidade", "ativo", "empresaRepresentacaoId"]
+    },
+    "EmpresaRepresentacao": {
+      "title": "EmpresaRepresentacao",
+      "description": "Uma das Razões Sociais da própria representação comercial.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nomeFantasia": { "type": "string" },
+        "razaoSocial": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "telefone": { "type": "string" },
+        "email": { "type": "string" },
+        "endereco": { "type": "string" },
+        "cidade": { "type": "string" },
+        "uf": { "type": "string" },
+        "isDefault": { "type": "boolean" },
+        "logoUrl": { "type": "string" }
+      },
+      "required": ["id", "nomeFantasia", "razaoSocial", "cnpj", "isDefault"]
+    },
+    "Usuario": {
+      "title": "Usuario",
+      "description": "Um usuário do sistema (Administrador, Representante, Vendedor).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["Administrador", "Representante", "Vendedor"] },
+        "ativo": { "type": "boolean" },
+        "empresaRepresentacaoId": { "type": "string" },
+        "senha": { "type": "string" }
+      },
+      "required": ["id", "nome", "email", "role", "ativo"]
+    },
+    "MetaVendas": {
+      "title": "MetaVendas",
+      "description": "Metas mensais de vendas por empresa.",
+      "type": "object",
+      "properties": {
+        "metaMensal": { "type": "number" },
+        "anoMes": { "type": "string" },
+        "empresaRepresentacaoId": { "type": "string" }
+      },
+      "required": ["metaMensal", "anoMes", "empresaRepresentacaoId"]
+    }
+  },
+  "firestore": {
+    "representadas": {
+      "schema": "Representada",
+      "description": "Coleção global de empresas representadas fabricante parceiras."
+    },
+    "clientes": {
+      "schema": "Cliente",
+      "description": "Coleção global de clientes lojistas da carteira."
+    },
+    "pedidos": {
+      "schema": "Pedido",
+      "description": "Coleção global de pedidos emitidos."
+    },
+    "produtos": {
+      "schema": "Produto",
+      "description": "Coleção global de produtos ofertados por representadas."
+    },
+    "empresas": {
+      "schema": "EmpresaRepresentacao",
+      "description": "Coleção de Razões Sociais da própria representação comercial."
+    },
+    "usuarios": {
+      "schema": "Usuario",
+      "description": "Coleção de usuários do sistema."
+    },
+    "meta": {
+      "schema": "MetaVendas",
+      "description": "Coleção de metas de vendas mensais."
+    }
+  }
+}
