@@ -49,6 +49,28 @@ export default function AdminTab({
   onSelectEmpresa,
   onSelectUsuario,
 }: AdminTabProps) {
+  // Current states (moved to top to be available to all functions and state initializers)
+  const activeUser = usuarios.find(u => u.id === currentUserId) || usuarios[0];
+  const isCurrentUserAdmin = activeUser?.role === 'Administrador';
+  const isRaul = activeUser?.id === 'usr-raul' || activeUser?.nome?.toLowerCase() === 'raul' || activeUser?.email === 'raul';
+
+  // Filter visible users and companies for restricted admins
+  const visibleUsuarios = usuarios.filter(usr => {
+    if (isRaul) return true;
+    if (activeUser?.empresaRepresentacaoId) {
+      return usr.empresaRepresentacaoId === activeUser.empresaRepresentacaoId;
+    }
+    return true;
+  });
+
+  const visibleEmpresas = empresas.filter(emp => {
+    if (isRaul) return true;
+    if (activeUser?.empresaRepresentacaoId) {
+      return emp.id === activeUser.empresaRepresentacaoId;
+    }
+    return true;
+  });
+
   const [subTab, setSubTab] = useState<'empresas' | 'usuarios'>('usuarios');
   
   // Modals editing state
@@ -102,7 +124,7 @@ export default function AdminTab({
       const reader = new FileReader();
       reader.onload = (event) => {
         const logoDataUrl = event.target?.result as string;
-        const activeEmp = empresas.find(e => e.id === activeEmpresaId) || empresas[0];
+        const activeEmp = visibleEmpresas.find(e => e.id === activeEmpresaId) || visibleEmpresas[0];
         if (activeEmp) {
           onEditEmpresa({
             ...activeEmp,
@@ -115,7 +137,7 @@ export default function AdminTab({
   };
 
   const handleRemoveActiveLogo = () => {
-    const activeEmp = empresas.find(e => e.id === activeEmpresaId) || empresas[0];
+    const activeEmp = visibleEmpresas.find(e => e.id === activeEmpresaId) || visibleEmpresas[0];
     if (activeEmp && confirm('Tem certeza que deseja remover o logo desta empresa?')) {
       onEditEmpresa({
         ...activeEmp,
@@ -272,11 +294,6 @@ export default function AdminTab({
     }
   };
 
-  // Current states
-  const activeUser = usuarios.find(u => u.id === currentUserId) || usuarios[0];
-  const isCurrentUserAdmin = activeUser?.role === 'Administrador';
-  const isRaul = activeUser?.id === 'usr-raul' || activeUser?.nome?.toLowerCase() === 'raul' || activeUser?.email === 'raul';
-
   return (
     <div className="space-y-6">
 
@@ -364,7 +381,7 @@ export default function AdminTab({
 
       {/* Configuração da Logo para a Razão Social Ativada no Sistema */}
       {(() => {
-        const activeEmp = empresas.find(e => e.id === activeEmpresaId) || empresas[0];
+        const activeEmp = visibleEmpresas.find(e => e.id === activeEmpresaId) || visibleEmpresas[0];
         return (
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-5 justify-between">
             <div className="flex items-center gap-4">
@@ -421,7 +438,7 @@ export default function AdminTab({
         >
           <div className="flex items-center gap-1.5">
             <Users className="w-4 h-4" />
-            <span>Controle de Usuários ({usuarios.length})</span>
+            <span>Controle de Usuários ({visibleUsuarios.length})</span>
           </div>
         </button>
         <button
@@ -434,7 +451,7 @@ export default function AdminTab({
         >
           <div className="flex items-center gap-1.5">
             <Building2 className="w-4 h-4" />
-            <span>Razões Sociais / Empresas Representadas ({empresas.length})</span>
+            <span>Razões Sociais / Empresas Representadas ({visibleEmpresas.length})</span>
           </div>
         </button>
       </div>
@@ -458,8 +475,8 @@ export default function AdminTab({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {usuarios.map(usr => {
-              const userCompany = empresas.find(e => e.id === usr.empresaRepresentacaoId);
+            {visibleUsuarios.map(usr => {
+              const userCompany = visibleEmpresas.find(e => e.id === usr.empresaRepresentacaoId);
               return (
                 <div key={usr.id} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
                   <div className="space-y-2.5">
@@ -555,7 +572,7 @@ export default function AdminTab({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {empresas.map(emp => (
+            {visibleEmpresas.map(emp => (
               <div key={emp.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
@@ -881,7 +898,7 @@ export default function AdminTab({
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none cursor-pointer"
                   >
                     <option value="">Selecione uma empresa...</option>
-                    {empresas.map(emp => (
+                    {visibleEmpresas.map(emp => (
                       <option key={emp.id} value={emp.id}>
                         {emp.nomeFantasia} ({emp.razaoSocial})
                       </option>
