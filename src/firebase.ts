@@ -58,14 +58,19 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-function removeUndefinedFields<T extends Record<string, any>>(obj: T): T {
-  const newObj = { ...obj };
-  Object.keys(newObj).forEach((key) => {
-    if (newObj[key] === undefined) {
-      delete newObj[key];
-    }
-  });
-  return newObj;
+function removeUndefinedFields(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefinedFields);
+  } else if (obj !== null && typeof obj === 'object') {
+    const newObj: any = {};
+    Object.keys(obj).forEach((key) => {
+      if (obj[key] !== undefined) {
+        newObj[key] = removeUndefinedFields(obj[key]);
+      }
+    });
+    return newObj;
+  }
+  return obj;
 }
 
 interface FirestoreErrorInfo {

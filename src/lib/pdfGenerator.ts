@@ -216,7 +216,8 @@ export function gerarPedidoPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
-  doc.text('Este documento é uma cópia digital informativa de representação comercial.', 105, 285, { align: 'center' });
+  doc.text('Este documento é uma cópia digital informativa de representação comercial.', 105, 280, { align: 'center' });
+  doc.text('© ' + new Date().getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468', 105, 285, { align: 'center' });
 
   // Save
   if (!skipSave) {
@@ -431,7 +432,8 @@ export function gerarResumoMensalPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
-  doc.text(`Relatório gerado em ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 105, 285, { align: 'center' });
+  doc.text(`Relatório gerado em ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 105, 280, { align: 'center' });
+  doc.text('© ' + new Date().getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468', 105, 285, { align: 'center' });
 
   doc.save(`Resumo_Mensal_${ano}_${mes}.pdf`);
 }
@@ -708,7 +710,8 @@ export function gerarDashboardPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
-  doc.text(`Relatório Executivo Gerencial gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 105, 285, { align: 'center' });
+  doc.text(`Relatório Executivo Gerencial gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 105, 280, { align: 'center' });
+  doc.text('© ' + new Date().getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468', 105, 285, { align: 'center' });
 
   doc.save(`Dashboard_Executivo_${new Date().toISOString().split('T')[0]}.pdf`);
 }
@@ -892,7 +895,8 @@ export function gerarComissoesPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
-  doc.text(`Relatório de Controle de Comissões - Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 105, 285, { align: 'center' });
+  doc.text(`Relatório de Controle de Comissões - Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 105, 280, { align: 'center' });
+  doc.text('© ' + new Date().getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468', 105, 285, { align: 'center' });
 
   doc.save(`Controle_Comissoes_${new Date().toISOString().split('T')[0]}.pdf`);
 }
@@ -1072,7 +1076,8 @@ export function gerarProvisionamentoPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
-  doc.text(`Fluxo de Provisão Financeira - Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 105, 285, { align: 'center' });
+  doc.text(`Fluxo de Provisão Financeira - Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 105, 280, { align: 'center' });
+  doc.text('© ' + new Date().getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468', 105, 285, { align: 'center' });
 
   doc.save(`Provisionamento_Financeiro_${new Date().toISOString().split('T')[0]}.pdf`);
 }

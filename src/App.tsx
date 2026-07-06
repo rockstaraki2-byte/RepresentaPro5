@@ -313,11 +313,11 @@ export default function App() {
 
     isFirstSnapshot.current = true;
 
-    const unsubscribe = onSnapshot(collection(db, 'pedidos'), (snapshot) => {
+    const unsubs: any[] = [];
+
+    unsubs.push(onSnapshot(collection(db, 'pedidos'), (snapshot) => {
       const updatedList: Pedido[] = [];
-      snapshot.forEach((doc) => {
-        updatedList.push(doc.data() as Pedido);
-      });
+      snapshot.forEach((doc) => updatedList.push(doc.data() as Pedido));
 
       // Avoid triggering notifications on the initial load of existing records
       if (!isFirstSnapshot.current) {
@@ -353,10 +353,44 @@ export default function App() {
       isFirstSnapshot.current = false;
     }, (err) => {
       console.warn("Erro no snapshot de pedidos (modo offline):", err);
-    });
+    }));
 
-    return () => unsubscribe();
-  }, [loading, activeEmpresaId, representadas, clientes]);
+    // Sincronização automática de outras coleções
+    unsubs.push(onSnapshot(collection(db, 'clientes'), (snapshot) => {
+      const list: Cliente[] = [];
+      snapshot.forEach(doc => list.push(doc.data() as Cliente));
+      setClientes(list);
+    }));
+    unsubs.push(onSnapshot(collection(db, 'representadas'), (snapshot) => {
+      const list: Representada[] = [];
+      snapshot.forEach(doc => list.push(doc.data() as Representada));
+      setRepresentadas(list);
+    }));
+    unsubs.push(onSnapshot(collection(db, 'produtos'), (snapshot) => {
+      const list: Produto[] = [];
+      snapshot.forEach(doc => list.push(doc.data() as Produto));
+      setProdutos(list);
+    }));
+    unsubs.push(onSnapshot(collection(db, 'empresas'), (snapshot) => {
+      const list: EmpresaRepresentacao[] = [];
+      snapshot.forEach(doc => list.push(doc.data() as EmpresaRepresentacao));
+      setEmpresas(list);
+    }));
+    unsubs.push(onSnapshot(collection(db, 'usuarios'), (snapshot) => {
+      const list: Usuario[] = [];
+      snapshot.forEach(doc => list.push(doc.data() as Usuario));
+      setUsuarios(list);
+    }));
+    unsubs.push(onSnapshot(collection(db, 'meta'), (snapshot) => {
+      snapshot.forEach(doc => {
+        if (doc.id === 'meta-global') {
+          setMeta(doc.data() as MetaVendas);
+        }
+      });
+    }));
+
+    return () => unsubs.forEach(unsub => unsub());
+  }, [loading, activeEmpresaId, representadas, clientes, pedidos]);
 
   // --- Active Selections and Helpers ---
   const activeEmpresa = empresas.find(e => e.id === activeEmpresaId) || empresas[0];
@@ -1075,12 +1109,19 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-auto py-5 px-6 hidden sm:block">
+      <footer className="bg-white border-t border-slate-200 mt-auto py-5 px-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-slate-400 font-mono">
-          <span>&copy; {new Date().getFullYear()} RepresentaPRO - Gestão & Inteligência Comercial.</span>
-          <div className="flex items-center gap-1">
-            <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Multiempresas: <strong className="text-slate-600">{empresas.length} cadastradas</strong> | Banco de dados isolado com criptografia local.</span>
+          <span>&copy; {new Date().getFullYear()} Desenvolvido por Raul Soares. Todos os direitos reservados.</span>
+          <div className="flex items-center gap-1.5">
+            <a href="https://wa.me/5532999098468" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 transition-colors font-medium">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+              Contato WhatsApp: (32) 99909-8468
+            </a>
+            <span className="hidden sm:inline-block text-slate-300 mx-2">|</span>
+            <span className="flex items-center gap-1">
+              <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Multiempresas: <strong className="text-slate-600">{empresas.length}</strong></span>
+            </span>
           </div>
         </div>
       </footer>
