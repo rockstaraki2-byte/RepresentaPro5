@@ -170,7 +170,8 @@ export default function AdminTab({
       endereco: empresaForm.endereco?.trim() || '',
       cidade: empresaForm.cidade?.trim() || '',
       uf: empresaForm.uf?.toUpperCase().trim() || '',
-      logoUrl: empresaForm.logoUrl || '',
+      logoUrl: empresaForm.logoUrl?.trim() || '',
+      corPrimaria: empresaForm.corPrimaria || '#059669',
       isDefault: editingEmpresaId ? (empresas.find(e => e.id === editingEmpresaId)?.isDefault || false) : (empresas.length === 0),
     };
 
@@ -294,30 +295,30 @@ export default function AdminTab({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full lg:w-auto shrink-0">
             {/* Empresa Selector */}
-            <div className="space-y-1">
-              <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
-                Empresa Ativa (Banco de Dados Isolado):
-              </label>
-              <select
-                value={activeEmpresaId}
-                onChange={(e) => onSelectEmpresa(e.target.value)}
-                className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold transition-all focus:outline-none focus:border-emerald-500 cursor-pointer"
-              >
-                {isRaul && (
+            {isRaul && (
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
+                  Empresa Ativa (Banco de Dados Isolado):
+                </label>
+                <select
+                  value={activeEmpresaId}
+                  onChange={(e) => onSelectEmpresa(e.target.value)}
+                  className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold transition-all focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
                   <option value="all" className="bg-slate-900 text-emerald-400 font-bold">
                     👑 Todas as Representações (Acesso Total)
                   </option>
-                )}
-                {empresas.map(emp => (
-                  <option key={emp.id} value={emp.id} className="bg-slate-900 text-white">
-                    🏢 {emp.nomeFantasia}
-                  </option>
-                ))}
-              </select>
-            </div>
+                  {empresas.map(emp => (
+                    <option key={emp.id} value={emp.id} className="bg-slate-900 text-white">
+                      🏢 {emp.nomeFantasia}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Profile User/Role Selector */}
-            <div className="space-y-1">
+            <div className={`space-y-1 ${!isRaul ? 'sm:col-span-2' : ''}`}>
               <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
                 Usuário / Nível de Acesso Ativo:
               </label>
@@ -767,6 +768,37 @@ export default function AdminTab({
                       value={empresaForm.uf || ''}
                       onChange={(e) => setEmpresaForm({ ...empresaForm, uf: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-mono uppercase text-slate-500">Logo (URL Pública)</label>
+                  <input
+                    type="url"
+                    placeholder="https://exemplo.com/logo.png"
+                    value={empresaForm.logoUrl || ''}
+                    onChange={(e) => setEmpresaForm({ ...empresaForm, logoUrl: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400">Insira um link válido para exibir a logo no topo da aplicação e impressos.</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-mono uppercase text-slate-500">Cor Primária (Hexadecimal)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={empresaForm.corPrimaria || '#059669'}
+                      onChange={(e) => setEmpresaForm({ ...empresaForm, corPrimaria: e.target.value })}
+                      className="h-8 w-8 cursor-pointer rounded overflow-hidden"
+                    />
+                    <input
+                      type="text"
+                      placeholder="#059669"
+                      value={empresaForm.corPrimaria || '#059669'}
+                      onChange={(e) => setEmpresaForm({ ...empresaForm, corPrimaria: e.target.value })}
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none font-mono uppercase"
                     />
                   </div>
                 </div>

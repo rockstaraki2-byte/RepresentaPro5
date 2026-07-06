@@ -102,6 +102,7 @@ export interface EmpresaRepresentacao {
   uf: string;
   isDefault: boolean;
   logoUrl?: string; // base64 data-URI or standard image URL
+  corPrimaria?: string; // Hex color code for the primary palette
 }
 
 

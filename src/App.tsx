@@ -636,6 +636,23 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+      {activeEmpresa?.corPrimaria && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          :root {
+            --color-emerald-50: ${activeEmpresa.corPrimaria}10;
+            --color-emerald-100: ${activeEmpresa.corPrimaria}20;
+            --color-emerald-200: ${activeEmpresa.corPrimaria}30;
+            --color-emerald-300: ${activeEmpresa.corPrimaria}40;
+            --color-emerald-400: ${activeEmpresa.corPrimaria}60;
+            --color-emerald-500: ${activeEmpresa.corPrimaria}80;
+            --color-emerald-600: ${activeEmpresa.corPrimaria};
+            --color-emerald-700: ${activeEmpresa.corPrimaria}E0;
+            --color-emerald-800: ${activeEmpresa.corPrimaria}C0;
+            --color-emerald-900: ${activeEmpresa.corPrimaria}A0;
+            --color-emerald-950: ${activeEmpresa.corPrimaria}80;
+          }
+        `}} />
+      )}
       
       {/* Top Banner & Header */}
       <header className="bg-white border-b border-slate-200 py-3 sm:py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-sm">
@@ -676,15 +693,17 @@ export default function App() {
               <strong className="text-slate-800 font-extrabold">{filteredClientes.length} lojistas</strong>
             </div>
             
-            <button
-              onClick={handleSincronizarDados}
-              disabled={isSyncing}
-              className={`bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed`}
-              title="Sincronizar dados com o Firebase"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar dados'}</span>
-            </button>
+            {isRaul && (
+              <button
+                onClick={handleSincronizarDados}
+                disabled={isSyncing}
+                className={`bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed hidden sm:flex`}
+                title="Sincronizar dados com o Firebase"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar dados'}</span>
+              </button>
+            )}
 
             {/* Bell/Notification Menu */}
             <div className="relative">

@@ -17,7 +17,9 @@ import {
   TrendingDown,
   AlertCircle,
   Printer,
-  SlidersHorizontal
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { gerarDashboardPDF } from '../lib/pdfGenerator';
@@ -61,6 +63,7 @@ export default function DashboardTab({
   const [activeModal, setActiveModal] = useState<'vendas' | 'comissoes_totais' | 'comissoes_recebidas' | 'clientes' | null>(null);
 
   // Filtros do Dashboard
+  const [showFilters, setShowFilters] = useState(false);
   const [filterRepresentada, setFilterRepresentada] = useState('Todos');
   const [filterCliente, setFilterCliente] = useState('Todos');
   const [filterStatus, setFilterStatus] = useState('Todos');
@@ -171,12 +174,15 @@ export default function DashboardTab({
     <div className="space-y-6">
       {/* Filtros Executivos */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-3 cursor-pointer" onClick={() => setShowFilters(!showFilters)}>
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="w-5 h-5 text-emerald-600" />
-            <h2 className="font-serif font-bold text-base text-slate-800">Filtros do Painel Geral</h2>
+            <h2 className="font-serif font-bold text-base text-slate-800 flex items-center gap-2">
+              Filtros do Painel Geral
+              {showFilters ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+            </h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
             {/* Clear filters button if any is active */}
             {(filterRepresentada !== 'Todos' || filterCliente !== 'Todos' || filterStatus !== 'Todos' || filterDataDe || filterDataAte) && (
               <button
@@ -205,14 +211,22 @@ export default function DashboardTab({
               }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm shadow-emerald-100"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4 hidden sm:block" />
               <span>Imprimir Relatório (PDF)</span>
             </button>
           </div>
         </div>
 
-        {/* Inputs Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3.5 text-xs text-slate-500">
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              {/* Inputs Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3.5 text-xs text-slate-500 pt-1">
           {/* Representada */}
           <div className="space-y-1">
             <label className="block text-[10px] font-mono uppercase tracking-wider">Representada / Fábrica</label>
@@ -282,6 +296,9 @@ export default function DashboardTab({
             />
           </div>
         </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Resumo de Metas */}

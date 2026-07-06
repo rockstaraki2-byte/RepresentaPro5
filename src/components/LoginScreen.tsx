@@ -30,12 +30,12 @@ export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: Logi
   }, [showSuggestions]);
 
   // Filter active users based on search query
-  const filteredUsers = usuarios.filter(u => 
+  const filteredUsers = searchQuery.trim().length > 0 ? usuarios.filter(u => 
     u.ativo && (
       u.nome.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email.toLowerCase().includes(searchQuery.toLowerCase())
     )
-  );
+  ) : [];
 
   const handleSelectUser = (usr: Usuario) => {
     setSelectedUser(usr);
@@ -166,7 +166,7 @@ export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: Logi
 
               {/* Suggestions Dropdown */}
               <AnimatePresence>
-                {showSuggestions && (
+                {showSuggestions && searchQuery.trim().length > 0 && (
                   <motion.div 
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
