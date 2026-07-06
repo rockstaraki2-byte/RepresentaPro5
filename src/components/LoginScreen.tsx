@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Usuario, EmpresaRepresentacao } from '../types';
-import { Briefcase, Lock, User, AlertCircle, ChevronRight, Building2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { Briefcase, Lock, User, AlertCircle, ChevronRight } from 'lucide-react';
+import { motion } from 'motion/react';
 
 interface LoginScreenProps {
   usuarios: Usuario[];
@@ -10,80 +10,61 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: LoginScreenProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<Usuario | null>(null);
-  const [selectedEmpresaId, setSelectedEmpresaId] = useState('');
+  const [loginInput, setLoginInput] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-
-  // Close suggestions when clicking outside
-  useEffect(() => {
-    if (!showSuggestions) return;
-    const handleOutsideClick = () => {
-      setShowSuggestions(false);
-    };
-    document.addEventListener('click', handleOutsideClick);
-    return () => {
-      document.removeEventListener('click', handleOutsideClick);
-    };
-  }, [showSuggestions]);
-
-  // Filter active users based on search query
-  const filteredUsers = searchQuery.trim().length > 0 ? usuarios.filter(u => 
-    u.ativo && (
-      u.nome.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  ) : [];
-
-  const handleSelectUser = (usr: Usuario) => {
-    setSelectedUser(usr);
-    setSearchQuery(usr.nome);
-    setShowSuggestions(false);
-    setError(null);
-
-    const isRaul = usr.id === 'usr-raul' || usr.nome?.toLowerCase() === 'raul' || usr.email?.toLowerCase() === 'raul';
-    if (isRaul) {
-      setSelectedEmpresaId('all');
-    } else if (usr.empresaRepresentacaoId) {
-      setSelectedEmpresaId(usr.empresaRepresentacaoId);
-    } else {
-      setSelectedEmpresaId(empresas[0]?.id || '');
-    }
-  };
-
-  const handleClearSelection = () => {
-    setSelectedUser(null);
-    setSearchQuery('');
-    setPassword('');
-    setError(null);
-  };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!selectedUser) {
-      setError('Por favor, pesquise e selecione um usuário.');
+    const inputCleaned = loginInput.trim().toLowerCase();
+    if (!inputCleaned) {
+      setError('Por favor, informe seu usuário ou e-mail.');
+      return;
+    }
+    if (!password) {
+      setError('Por favor, informe sua senha de acesso.');
       return;
     }
 
-    if (!selectedUser.ativo) {
+    // Try to find the active user
+    const foundUser = usuarios.find(u => 
+      u.nome.toLowerCase() === inputCleaned || 
+      u.email.toLowerCase() === inputCleaned
+    );
+
+    if (!foundUser) {
+      setError('Usuário ou senha incorretos.');
+      return;
+    }
+
+    if (!foundUser.ativo) {
       setError('Esta conta de usuário está inativa. Contate o administrador.');
       return;
     }
 
     // Default password to '123456' if not specified in database
-    const correctPassword = selectedUser.senha || '123456';
+    const correctPassword = foundUser.senha || '123456';
 
     if (correctPassword !== password) {
-      setError('Senha incorreta para esta conta de usuário.');
+      setError('Usuário ou senha incorretos.');
       return;
     }
 
+    // Determine active company ID
+    const isRaul = foundUser.id === 'usr-raul' || foundUser.nome?.toLowerCase() === 'raul' || foundUser.email?.toLowerCase() === 'raul';
+    let selectedEmpresaId = '';
+    if (isRaul) {
+      selectedEmpresaId = 'all';
+    } else if (foundUser.empresaRepresentacaoId) {
+      selectedEmpresaId = foundUser.empresaRepresentacaoId;
+    } else {
+      selectedEmpresaId = empresas[0]?.id || '';
+    }
+
     // Login successful
-    onLoginSuccess(selectedUser.id, selectedEmpresaId);
+    onLoginSuccess(foundUser.id, selectedEmpresaId);
   };
 
   return (
@@ -120,110 +101,35 @@ export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: Logi
           className="bg-slate-950/80 backdrop-blur-md py-8 px-6 sm:px-10 rounded-3xl border border-slate-800 shadow-2xl space-y-6"
         >
           {error && (
-            <div className="p-3 bg-red-950/50 border border-red-900 text-red-400 rounded-xl text-xs flex items-start gap-2">
+            <div className="p-3 bg-red-950/50 border border-red-900 text-red-400 rounded-xl text-xs flex items-start gap-2 animate-pulse">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           <form onSubmit={handleLoginSubmit} className="space-y-4">
-            {/* Search Input wrapper to stop outside click propagation */}
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
-              <label htmlFor="usuario-search" className="block text-[10px] font-mono uppercase text-slate-400 font-bold tracking-wider mb-1.5">
-                Usuário / Colaborador (Digite para buscar)
+            <div>
+              <label htmlFor="login-username" className="block text-[10px] font-mono uppercase text-slate-400 font-bold tracking-wider mb-1.5">
+                Usuário ou E-mail
               </label>
               <div className="relative rounded-xl shadow-xs">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
                   <User className="h-4 w-4" />
                 </div>
                 <input
-                  id="usuario-search"
+                  id="login-username"
                   type="text"
-                  placeholder="Ex: Raul, André, Bruno..."
-                  value={searchQuery}
+                  placeholder="Digite seu usuário ou e-mail"
+                  value={loginInput}
                   onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    if (selectedUser && e.target.value !== selectedUser.nome) {
-                      setSelectedUser(null);
-                    }
-                    setShowSuggestions(true);
+                    setLoginInput(e.target.value);
                     setError(null);
                   }}
-                  onFocus={() => setShowSuggestions(true)}
-                  className="block w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors font-bold"
+                  className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors font-bold"
                   autoComplete="off"
                 />
-                {selectedUser && (
-                  <button
-                    type="button"
-                    onClick={handleClearSelection}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white"
-                  >
-                    <span className="text-sm font-bold">&times;</span>
-                  </button>
-                )}
               </div>
-
-              {/* Suggestions Dropdown */}
-              <AnimatePresence>
-                {showSuggestions && searchQuery.trim().length > 0 && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 5 }}
-                    className="absolute z-50 mt-1.5 w-full bg-slate-950 border border-slate-800 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto divide-y divide-slate-900"
-                  >
-                    {filteredUsers.length === 0 ? (
-                      <div className="p-3 text-xs text-slate-500 italic text-center">
-                        Nenhum usuário ativo encontrado
-                      </div>
-                    ) : (
-                      filteredUsers.map((usr) => {
-                        const userCompany = empresas.find(e => e.id === usr.empresaRepresentacaoId);
-                        return (
-                          <div
-                            key={usr.id}
-                            onClick={() => handleSelectUser(usr)}
-                            className="p-3 hover:bg-slate-900 cursor-pointer flex flex-col gap-0.5 text-left transition-all"
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="font-bold text-xs text-white">{usr.nome}</span>
-                              <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{usr.role}</span>
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-serif">
-                              {userCompany ? `🏢 ${userCompany.nomeFantasia}` : '👑 Administrador Geral (Acesso Total)'}
-                            </span>
-                          </div>
-                        );
-                      })
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
-
-            {/* Identified Company Display */}
-            {selectedUser && (
-              <motion.div
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center gap-3"
-              >
-                <div className="p-2 bg-emerald-600/10 text-emerald-400 rounded-lg">
-                  <Building2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="text-[9px] font-mono uppercase text-slate-500 block leading-none">
-                    Representação Identificada
-                  </span>
-                  <strong className="text-xs text-white mt-1 block">
-                    {selectedUser.empresaRepresentacaoId 
-                      ? (empresas.find(e => e.id === selectedUser.empresaRepresentacaoId)?.nomeFantasia || 'Carregando...')
-                      : 'Administrador Geral (Acesso a Todas)'}
-                  </strong>
-                </div>
-              </motion.div>
-            )}
 
             {/* Password Input */}
             <div>
@@ -243,16 +149,14 @@ export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: Logi
                     setPassword(e.target.value);
                     setError(null);
                   }}
-                  disabled={!selectedUser}
-                  className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={!selectedUser}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer shadow-emerald-950/20 mt-6"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 px-4 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer shadow-emerald-950/20 mt-6"
             >
               <span>Acessar o Sistema</span>
               <ChevronRight className="w-4 h-4" />

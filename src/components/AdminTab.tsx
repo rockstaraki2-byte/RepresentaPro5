@@ -280,85 +280,87 @@ export default function AdminTab({
   return (
     <div className="space-y-6">
 
-      {/* Profile & Sandbox Testing Simulation Hub */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-md border border-slate-700/50">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-1.5">
-            <span className="text-[10px] uppercase font-mono tracking-widest text-emerald-400 bg-emerald-900/40 px-2 py-0.5 rounded font-bold">
-              Sandbox de Simulação de Acesso e Multiempresas
-            </span>
-            <h3 className="font-serif font-extrabold text-base leading-tight">Painel de Login & Identidades</h3>
-            <p className="text-xs text-slate-300">
-              Alternando os seletores abaixo, você simula o comportamento do sistema com bancos de dados isolados e restrições de permissões em tempo real.
-            </p>
-          </div>
+      {/* Profile & Sandbox Testing Simulation Hub - Raul Only */}
+      {isRaul && (
+        <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-md border border-slate-700/50">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase font-mono tracking-widest text-emerald-400 bg-emerald-900/40 px-2 py-0.5 rounded font-bold">
+                Sandbox de Simulação de Acesso e Multiempresas
+              </span>
+              <h3 className="font-serif font-extrabold text-base leading-tight">Painel de Login & Identidades</h3>
+              <p className="text-xs text-slate-300">
+                Alternando os seletores abaixo, você simula o comportamento do sistema com bancos de dados isolados e restrições de permissões em tempo real.
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full lg:w-auto shrink-0">
-            {/* Empresa Selector */}
-            {isRaul && (
-              <div className="space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full lg:w-auto shrink-0">
+              {/* Empresa Selector */}
+              {isRaul && (
+                <div className="space-y-1">
+                  <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
+                    Empresa Ativa (Banco de Dados Isolado):
+                  </label>
+                  <select
+                    value={activeEmpresaId}
+                    onChange={(e) => onSelectEmpresa(e.target.value)}
+                    className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold transition-all focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="all" className="bg-slate-900 text-emerald-400 font-bold">
+                      👑 Todas as Representações (Acesso Total)
+                    </option>
+                    {empresas.map(emp => (
+                      <option key={emp.id} value={emp.id} className="bg-slate-900 text-white">
+                        🏢 {emp.nomeFantasia}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Profile User/Role Selector */}
+              <div className={`space-y-1 ${!isRaul ? 'sm:col-span-2' : ''}`}>
                 <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
-                  Empresa Ativa (Banco de Dados Isolado):
+                  Usuário / Nível de Acesso Ativo:
                 </label>
                 <select
-                  value={activeEmpresaId}
-                  onChange={(e) => onSelectEmpresa(e.target.value)}
+                  value={currentUserId}
+                  onChange={(e) => onSelectUsuario(e.target.value)}
                   className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold transition-all focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
-                  <option value="all" className="bg-slate-900 text-emerald-400 font-bold">
-                    👑 Todas as Representações (Acesso Total)
-                  </option>
-                  {empresas.map(emp => (
-                    <option key={emp.id} value={emp.id} className="bg-slate-900 text-white">
-                      🏢 {emp.nomeFantasia}
-                    </option>
-                  ))}
+                  {usuarios.map(usr => {
+                    const isUsrRaul = usr.id === 'usr-raul' || usr.nome?.toLowerCase() === 'raul' || usr.email?.toLowerCase() === 'raul';
+                    const empName = isUsrRaul ? '👑 Todas (Acesso Total)' : (empresas.find(e => e.id === usr.empresaRepresentacaoId)?.nomeFantasia || 'N/A');
+                    return (
+                      <option key={usr.id} value={usr.id} className="bg-slate-900 text-white">
+                        👤 {usr.nome} ({usr.role}) - {empName}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
+            </div>
+          </div>
+
+          {/* Access Rights Information Footer inside Sandbox */}
+          <div className="mt-4 pt-4 border-t border-slate-700/60 flex flex-wrap items-center gap-4 text-xs text-slate-300">
+            <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+              <KeyRound className="w-4 h-4 text-emerald-400" />
+              <span>Perfil Atual: <strong className="text-white">{activeUser?.nome}</strong> ({activeUser?.role})</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+              <Building className="w-4 h-4 text-blue-400" />
+              <span>Empresa Padrão: <strong className="text-white">{empresas.find(e => e.id === activeEmpresaId)?.nomeFantasia}</strong></span>
+            </div>
+            {!isCurrentUserAdmin && (
+              <div className="flex items-center gap-1.5 bg-amber-950/40 text-amber-300 border border-amber-800/50 px-3 py-1.5 rounded-lg">
+                <Lock className="w-3.5 h-3.5 shrink-0" />
+                <span>Restrições Ativas: Somente <strong>Administradores</strong> podem cadastrar novos usuários ou razões sociais.</span>
+              </div>
             )}
-
-            {/* Profile User/Role Selector */}
-            <div className={`space-y-1 ${!isRaul ? 'sm:col-span-2' : ''}`}>
-              <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
-                Usuário / Nível de Acesso Ativo:
-              </label>
-              <select
-                value={currentUserId}
-                onChange={(e) => onSelectUsuario(e.target.value)}
-                className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold transition-all focus:outline-none focus:border-emerald-500 cursor-pointer"
-              >
-                {usuarios.map(usr => {
-                  const isUsrRaul = usr.id === 'usr-raul' || usr.nome?.toLowerCase() === 'raul' || usr.email?.toLowerCase() === 'raul';
-                  const empName = isUsrRaul ? '👑 Todas (Acesso Total)' : (empresas.find(e => e.id === usr.empresaRepresentacaoId)?.nomeFantasia || 'N/A');
-                  return (
-                    <option key={usr.id} value={usr.id} className="bg-slate-900 text-white">
-                      👤 {usr.nome} ({usr.role}) - {empName}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
           </div>
         </div>
-
-        {/* Access Rights Information Footer inside Sandbox */}
-        <div className="mt-4 pt-4 border-t border-slate-700/60 flex flex-wrap items-center gap-4 text-xs text-slate-300">
-          <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-            <KeyRound className="w-4 h-4 text-emerald-400" />
-            <span>Perfil Atual: <strong className="text-white">{activeUser?.nome}</strong> ({activeUser?.role})</span>
-          </div>
-          <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-            <Building className="w-4 h-4 text-blue-400" />
-            <span>Empresa Padrão: <strong className="text-white">{empresas.find(e => e.id === activeEmpresaId)?.nomeFantasia}</strong></span>
-          </div>
-          {!isCurrentUserAdmin && (
-            <div className="flex items-center gap-1.5 bg-amber-950/40 text-amber-300 border border-amber-800/50 px-3 py-1.5 rounded-lg">
-              <Lock className="w-3.5 h-3.5 shrink-0" />
-              <span>Restrições Ativas: Somente <strong>Administradores</strong> podem cadastrar novos usuários ou razões sociais.</span>
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Configuração da Logo para a Razão Social Ativada no Sistema */}
       {(() => {
