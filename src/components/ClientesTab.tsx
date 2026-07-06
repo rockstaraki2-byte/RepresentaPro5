@@ -16,7 +16,8 @@ import {
   Loader2,
   X,
   TrendingUp,
-  SlidersHorizontal
+  SlidersHorizontal,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -465,6 +466,32 @@ export default function ClientesTab({
               const totalComprado = clientPedidos.reduce((sum, p) => sum + p.valorTotal, 0);
               const totalComissao = clientPedidos.reduce((sum, p) => sum + p.valorComissao, 0);
 
+              const sortedOrders = [...clientPedidos].sort((a, b) => a.dataPedido.localeCompare(b.dataPedido));
+              let mediaDiasEntreCompras = 0;
+              if (sortedOrders.length >= 2) {
+                let totalDiffDays = 0;
+                for (let i = 1; i < sortedOrders.length; i++) {
+                  const datePrev = new Date(sortedOrders[i - 1].dataPedido).getTime();
+                  const dateCurr = new Date(sortedOrders[i].dataPedido).getTime();
+                  const diffTime = Math.abs(dateCurr - datePrev);
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                  totalDiffDays += diffDays;
+                }
+                mediaDiasEntreCompras = Math.round(totalDiffDays / (sortedOrders.length - 1));
+              } else if (sortedOrders.length === 1) {
+                mediaDiasEntreCompras = 90; // Default threshold of 90 days if only 1 purchase
+              }
+
+              let daysSinceLast = 0;
+              let isOverdue = false;
+              if (sortedOrders.length > 0) {
+                const lastOrderDateStr = sortedOrders[sortedOrders.length - 1].dataPedido;
+                const lastPurchaseTime = new Date(lastOrderDateStr).getTime();
+                const todayTime = new Date().getTime();
+                daysSinceLast = Math.max(0, Math.ceil((todayTime - lastPurchaseTime) / (1000 * 60 * 60 * 24)));
+                isOverdue = mediaDiasEntreCompras > 0 && daysSinceLast > mediaDiasEntreCompras;
+              }
+
               return (
                 <div 
                   key={cli.id} 
@@ -484,6 +511,18 @@ export default function ClientesTab({
                       </div>
                       <h5 className="font-serif font-bold text-base text-slate-800 leading-tight mt-1">{cli.nomeFantasia}</h5>
                       <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{cli.cnpj}</p>
+                      
+                      {isOverdue && (
+                        <div className="mt-2.5 bg-red-50 text-red-700 border border-red-100 rounded-lg p-2.5 flex items-start gap-1.5 font-mono text-[10px] font-bold">
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="block text-red-800">ALERTA DE INATIVIDADE</span>
+                            <span className="block font-normal mt-0.5">
+                              Sem comprar há <strong className="text-red-700">{daysSinceLast} dias</strong>. (Média: <strong>{mediaDiasEntreCompras} dias</strong>)
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="border-t border-dashed border-slate-100 pt-2.5 space-y-1.5 text-xs text-slate-600">

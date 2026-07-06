@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Pedido, Cliente, Representada, OrderItem, PedidoStatus, Produto } from '../types';
 import { formatarMoeda, formatarData } from '../utils';
-import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { gerarPedidoPDF, gerarResumoMensalPDF } from '../lib/pdfGenerator';
 
@@ -142,9 +142,100 @@ export default function PedidosTab({
   const [itemDescricao, setItemDescricao] = useState('');
   const [itemCor, setItemCor] = useState('');
   const [itemVariacao, setItemVariacao] = useState('');
-  const [itemQuantidade, setItemQuantidade] = useState<number>(1);
+  const [itemQuantidade, setItemQuantidade] = useState<number | ''>('');
   const [itemPreco, setItemPreco] = useState<number>(0);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
+  // Recommendations logic based on client + represented purchase history
+  const recomendacoes = useMemo(() => {
+    if (!clienteId || !representadaId) return [];
+
+    // Filter past orders for this customer and represented supplier
+    const pedidosPassados = pedidos.filter(
+      p => p.clienteId === clienteId && p.representadaId === representadaId && p.status !== 'Cancelado'
+    );
+
+    // Aggregate items bought to find popular ones
+    const itemAgregado: { 
+      [key: string]: { 
+        count: number; 
+        totalQty: number; 
+        precoUnitario: number; 
+        cor?: string; 
+        variacao?: string; 
+        produtoId?: string; 
+        descricao: string;
+      } 
+    } = {};
+
+    pedidosPassados.forEach(p => {
+      p.itens.forEach(it => {
+        const key = `${it.descricao.toLowerCase()}::${(it.cor || '').toLowerCase()}::${(it.variacao || '').toLowerCase()}`;
+        if (!itemAgregado[key]) {
+          // Find matching product in products list by description
+          const matchingProd = produtos.find(
+            prod => prod.nome.toLowerCase() === it.descricao.toLowerCase() && prod.representadaId === representadaId
+          );
+          itemAgregado[key] = {
+            count: 0,
+            totalQty: 0,
+            precoUnitario: it.precoUnitario,
+            cor: it.cor,
+            variacao: it.variacao,
+            produtoId: matchingProd?.id,
+            descricao: it.descricao
+          };
+        }
+        itemAgregado[key].count += 1;
+        itemAgregado[key].totalQty += it.quantidade;
+      });
+    });
+
+    return Object.values(itemAgregado)
+      .sort((a, b) => b.count - a.count || b.totalQty - a.totalQty)
+      .slice(0, 4); // Keep top 4 recommendations
+  }, [clienteId, representadaId, pedidos, produtos]);
+
+  // Find selected client inactivity info for order form warning
+  const selectedClienteInfo = useMemo(() => {
+    if (!clienteId) return null;
+    const cli = clientes.find(c => c.id === clienteId);
+    if (!cli) return null;
+
+    const clientPedidos = pedidos.filter(p => p.clienteId === cli.id && p.status !== 'Cancelado');
+    const sortedOrders = [...clientPedidos].sort((a, b) => a.dataPedido.localeCompare(b.dataPedido));
+    let mediaDiasEntreCompras = 0;
+    if (sortedOrders.length >= 2) {
+      let totalDiffDays = 0;
+      for (let i = 1; i < sortedOrders.length; i++) {
+        const datePrev = new Date(sortedOrders[i - 1].dataPedido).getTime();
+        const dateCurr = new Date(sortedOrders[i].dataPedido).getTime();
+        const diffTime = Math.abs(dateCurr - datePrev);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        totalDiffDays += diffDays;
+      }
+      mediaDiasEntreCompras = Math.round(totalDiffDays / (sortedOrders.length - 1));
+    } else if (sortedOrders.length === 1) {
+      mediaDiasEntreCompras = 90; // Default threshold of 90 days if only 1 purchase
+    }
+
+    let daysSinceLast = 0;
+    let isOverdue = false;
+    if (sortedOrders.length > 0) {
+      const lastOrderDateStr = sortedOrders[sortedOrders.length - 1].dataPedido;
+      const lastPurchaseTime = new Date(lastOrderDateStr).getTime();
+      const todayTime = new Date().getTime();
+      daysSinceLast = Math.max(0, Math.ceil((todayTime - lastPurchaseTime) / (1000 * 60 * 60 * 24)));
+      isOverdue = mediaDiasEntreCompras > 0 && daysSinceLast > mediaDiasEntreCompras;
+    }
+
+    return {
+      isOverdue,
+      daysSinceLast,
+      mediaDiasEntreCompras,
+      totalPedidos: clientPedidos.length
+    };
+  }, [clienteId, pedidos, clientes]);
 
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -242,7 +333,8 @@ export default function PedidosTab({
       alert('Preencha a descrição do produto.');
       return;
     }
-    if (itemQuantidade <= 0) {
+    const qty = typeof itemQuantidade === 'number' ? itemQuantidade : parseInt(itemQuantidade) || 0;
+    if (qty <= 0) {
       alert('A quantidade do item deve ser maior que zero.');
       return;
     }
@@ -257,9 +349,9 @@ export default function PedidosTab({
         descricao: itemDescricao.trim(),
         cor: itemCor.trim() || undefined,
         variacao: itemVariacao.trim() || undefined,
-        quantidade: itemQuantidade,
+        quantidade: qty,
         precoUnitario: itemPreco,
-        totalItem: itemQuantidade * itemPreco
+        totalItem: qty * itemPreco
       } : it));
     } else {
       const novoItem: OrderItem = {
@@ -267,9 +359,9 @@ export default function PedidosTab({
         descricao: itemDescricao.trim(),
         cor: itemCor.trim() || undefined,
         variacao: itemVariacao.trim() || undefined,
-        quantidade: itemQuantidade,
+        quantidade: qty,
         precoUnitario: itemPreco,
-        totalItem: itemQuantidade * itemPreco
+        totalItem: qty * itemPreco
       };
       setItens([...itens, novoItem]);
     }
@@ -278,7 +370,7 @@ export default function PedidosTab({
     setItemDescricao('');
     setItemCor('');
     setItemVariacao('');
-    setItemQuantidade(1);
+    setItemQuantidade('');
     setItemPreco(0);
     setEditingItemId(null);
   };
@@ -308,6 +400,7 @@ export default function PedidosTab({
     setObservacoes('');
     setCondicoesPagamento('');
     setSelectedProdutoId('');
+    setItemQuantidade('');
     setValidationError(null);
     setIsFormOpen(false);
   };
@@ -619,6 +712,17 @@ export default function PedidosTab({
                           onChange={(id) => setClienteId(id)}
                           placeholder="Buscar cliente por nome ou CNPJ..."
                         />
+                        {selectedClienteInfo?.isOverdue && (
+                          <div className="mt-1.5 bg-red-50 text-red-700 border border-red-100 rounded-lg p-2 flex items-start gap-1.5 font-mono text-[10px] font-bold">
+                            <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="block text-red-850">ALERTA DE INATIVIDADE</span>
+                              <span className="block font-normal mt-0.5 text-red-600">
+                                Este cliente está há <strong className="text-red-750">{selectedClienteInfo.daysSinceLast} dias</strong> sem comprar (a média dele é de {selectedClienteInfo.mediaDiasEntreCompras} dias).
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Representada */}
@@ -795,6 +899,50 @@ export default function PedidosTab({
                           />
                         </div>
 
+                        {/* Interactive Purchase History Recommendations */}
+                        {recomendacoes.length > 0 && (
+                          <div className="bg-emerald-50/50 rounded-lg p-2.5 border border-emerald-100/50 space-y-1.5">
+                            <span className="block text-[9px] font-mono uppercase text-emerald-800 font-bold flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-emerald-600 animate-pulse" />
+                              Produtos sugeridos do histórico
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {recomendacoes.map((rec, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    if (rec.produtoId) {
+                                      setSelectedProdutoId(rec.produtoId);
+                                    } else {
+                                      const foundProd = produtos.find(
+                                        p => p.nome.toLowerCase() === rec.descricao.toLowerCase() && p.representadaId === representadaId
+                                      );
+                                      if (foundProd) {
+                                        setSelectedProdutoId(foundProd.id);
+                                      } else {
+                                        setSelectedProdutoId('');
+                                      }
+                                    }
+                                    setItemDescricao(rec.descricao);
+                                    setItemPreco(rec.precoUnitario);
+                                    setItemCor(rec.cor || '');
+                                    setItemVariacao(rec.variacao || '');
+                                    setItemQuantidade(''); // Leave quantity free for typing as requested!
+                                  }}
+                                  className="bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded px-2 py-1 text-[10px] transition-all text-left flex flex-col gap-0.5 shadow-2xs shrink-0 max-w-full truncate cursor-pointer"
+                                  title={`Frequência: ${rec.count} compras | Qtd total: ${rec.totalQty}`}
+                                >
+                                  <span className="font-semibold block truncate max-w-[180px]">{rec.descricao}</span>
+                                  <span className="text-[9px] text-slate-400 font-mono block">
+                                    {rec.cor ? `Cor: ${rec.cor}` : ''} {rec.variacao ? `| Var: ${rec.variacao}` : ''} | {formatarMoeda(rec.precoUnitario)}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="space-y-1 sm:col-span-1">
                             <label className="block text-[10px] font-mono uppercase text-slate-500">Cor</label>
@@ -835,10 +983,13 @@ export default function PedidosTab({
                             <label className="block text-[10px] font-mono uppercase text-slate-500">Quantidade</label>
                             <input 
                               type="number"
-                              min="1"
                               value={itemQuantidade}
-                              onChange={(e) => setItemQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 text-slate-850 font-mono"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setItemQuantidade(val === '' ? '' : isNaN(parseInt(val)) ? '' : parseInt(val));
+                              }}
+                              placeholder="Digite a qtd"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 text-slate-850 font-mono font-bold text-slate-900"
                             />
                           </div>
                           <div className="space-y-1">
