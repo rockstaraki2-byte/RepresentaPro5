@@ -61,11 +61,11 @@ service cloud.firestore {
     }
 
     function isValidProduto(data) {
-      return data.keys().hasAll(['id', 'codigo', 'nome', 'representadaId', 'precoVenda', 'unidade', 'ativo', 'empresaRepresentacaoId'])
+      return data.keys().hasAll(['id', 'codigo', 'nome', 'precoVenda', 'unidade', 'ativo', 'empresaRepresentacaoId'])
         && data.id is string && data.id.size() <= 100
         && data.codigo is string && data.codigo.size() <= 100
         && data.nome is string && data.nome.size() <= 250
-        && data.representadaId is string && data.representadaId.size() <= 100
+        && (!data.keys().contains('representadaId') || (data.representadaId is string && data.representadaId.size() <= 100))
         && data.precoVenda is number
         && data.unidade is string && data.unidade.size() <= 50
         && data.ativo is bool

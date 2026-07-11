@@ -439,6 +439,244 @@ export function gerarResumoMensalPDF(
 }
 
 /**
+ * Generates a period summary report in PDF based on filtered orders.
+ */
+export function gerarResumoPeriodoPDF(
+  pedidosFiltrados: Pedido[], 
+  clientes: Cliente[], 
+  representadas: Representada[], 
+  dataDe: string,
+  dataAte: string,
+  empresaRepresentacao?: any
+) {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const primaryColor = [16, 185, 129]; // Emerald 500
+  const darkColor = [30, 41, 59]; // Slate 800
+  const lightColor = [248, 250, 252]; // Slate 50
+  const borderColor = [226, 232, 240]; // Slate 200
+
+  const pedidosValidos = pedidosFiltrados.filter(p => p.status !== 'Cancelado');
+
+  const totalVendas = pedidosValidos.reduce((sum, p) => sum + p.valorTotal, 0);
+  const totalComissoes = pedidosValidos.reduce((sum, p) => sum + p.valorComissao, 0);
+  const comissaoPaga = pedidosFiltrados.filter(p => p.status === 'Pago').reduce((sum, p) => sum + p.valorComissao, 0);
+  const comissaoPendente = pedidosFiltrados.filter(p => p.status === 'Faturado' || p.status === 'Pendente').reduce((sum, p) => sum + p.valorComissao, 0);
+
+  // Period label
+  let periodoLabel = 'Período Completo';
+  if (dataDe && dataAte) {
+    periodoLabel = `De ${formatarData(dataDe)} até ${formatarData(dataAte)}`;
+  } else if (dataDe) {
+    periodoLabel = `A partir de ${formatarData(dataDe)}`;
+  } else if (dataAte) {
+    periodoLabel = `Até ${formatarData(dataAte)}`;
+  }
+
+  // Header Banner
+  doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+  doc.rect(0, 0, 210, 36, 'F');
+
+  let headerTextOffset = 15;
+  
+  if (empresaRepresentacao?.logoUrl && empresaRepresentacao.logoUrl.startsWith('data:image/')) {
+    try {
+      const format = empresaRepresentacao.logoUrl.split(';')[0].split('/')[1]?.toUpperCase() || 'PNG';
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(12, 5, 24, 24, 2, 2, 'F');
+      doc.addImage(empresaRepresentacao.logoUrl, format, 14, 7, 20, 20);
+      headerTextOffset = 42;
+    } catch (err) {
+      console.error('Erro ao adicionar logo no PDF do Relatório:', err);
+    }
+  } else {
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.roundedRect(12, 8, 12, 12, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('R', 18, 16.5, { align: 'center' });
+    headerTextOffset = 28;
+  }
+
+  // Title
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('RESUMO DE VENDAS E COMISSÕES POR PERÍODO', headerTextOffset, 15);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Período: ${periodoLabel} | ${empresaRepresentacao?.nomeFantasia || 'RepresentaPRO'}`, headerTextOffset, 21);
+
+  // Quick stats panels (4 cols)
+  const colW = 42;
+  const colY = 44;
+  
+  // Stat 1: Total faturado
+  doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
+  doc.rect(15, colY, colW, 20, 'F');
+  doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+  doc.rect(15, colY, colW, 20, 'D');
+  doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('TOTAL DE VENDAS', 18, colY + 5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(formatarMoeda(totalVendas), 18, colY + 13);
+
+  // Stat 2: Total comissoes
+  doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
+  doc.rect(15 + colW + 4, colY, colW, 20, 'F');
+  doc.rect(15 + colW + 4, colY, colW, 20, 'D');
+  doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('COMISSÕES TOTAIS', 15 + colW + 7, colY + 5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(formatarMoeda(totalComissoes), 15 + colW + 7, colY + 13);
+
+  // Stat 3: Comissões Recebidas
+  doc.setFillColor(240, 253, 244); // light green bg
+  doc.rect(15 + (colW * 2) + 8, colY, colW, 20, 'F');
+  doc.setDrawColor(187, 247, 208);
+  doc.rect(15 + (colW * 2) + 8, colY, colW, 20, 'D');
+  doc.setTextColor(21, 128, 61); // green-700
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('VALORES RECEBIDOS', 15 + (colW * 2) + 11, colY + 5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(formatarMoeda(comissaoPaga), 15 + (colW * 2) + 11, colY + 13);
+
+  // Stat 4: Comissões Pendentes
+  doc.setFillColor(254, 243, 199); // light amber bg
+  doc.rect(15 + (colW * 3) + 12, colY, colW, 20, 'F');
+  doc.setDrawColor(253, 230, 138);
+  doc.rect(15 + (colW * 3) + 12, colY, colW, 20, 'D');
+  doc.setTextColor(180, 83, 9); // amber-700
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('VALORES A RECEBER', 15 + (colW * 3) + 15, colY + 5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(formatarMoeda(comissaoPendente), 15 + (colW * 3) + 15, colY + 13);
+
+  let y = 72;
+
+  // Table header
+  doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+  doc.rect(15, y, 180, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  
+  doc.text('Cód. Pedido', 16, y + 5.5);
+  doc.text('Data', 44, y + 5.5);
+  doc.text('Cliente', 62, y + 5.5);
+  doc.text('Representada', 102, y + 5.5);
+  doc.text('Status', 140, y + 5.5);
+  doc.text('Valor Total', 170, y + 5.5, { align: 'right' });
+  doc.text('Comissão', 195, y + 5.5, { align: 'right' });
+
+  y += 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+
+  if (pedidosFiltrados.length === 0) {
+    doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
+    doc.rect(15, y, 180, 12, 'F');
+    doc.setFont('helvetica', 'italic');
+    doc.text('Nenhum pedido de venda registrado para os filtros selecionados.', 105, y + 7, { align: 'center' });
+    y += 12;
+  } else {
+    pedidosFiltrados.forEach((p, index) => {
+      // Check pagination
+      if (y > 260) {
+        doc.addPage();
+        y = 15;
+        // Reprint header on new page
+        doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+        doc.rect(15, y, 180, 8, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text('Cód. Pedido', 16, y + 5.5);
+        doc.text('Data', 44, y + 5.5);
+        doc.text('Cliente', 62, y + 5.5);
+        doc.text('Representada', 102, y + 5.5);
+        doc.text('Status', 140, y + 5.5);
+        doc.text('Valor Total', 170, y + 5.5, { align: 'right' });
+        doc.text('Comissão', 195, y + 5.5, { align: 'right' });
+        y += 8;
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+      }
+
+      if (index % 2 === 1) {
+        doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
+        doc.rect(15, y, 180, 8, 'F');
+      }
+      doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+      doc.line(15, y + 8, 195, y + 8);
+
+      const cli = clientes.find(c => c.id === p.clienteId);
+      const rep = representadas.find(r => r.id === p.representadaId);
+
+      const displayPedidoNum = p.numeroPedido.length > 13 ? p.numeroPedido.substring(0, 11) + '..' : p.numeroPedido;
+      const displayCliente = cli?.nomeFantasia ? (cli.nomeFantasia.length > 18 ? cli.nomeFantasia.substring(0, 16) + '..' : cli.nomeFantasia) : 'N/A';
+      const displayRepresentada = rep?.nomeFantasia ? (rep.nomeFantasia.length > 16 ? rep.nomeFantasia.substring(0, 14) + '..' : rep.nomeFantasia) : 'N/A';
+
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`#${displayPedidoNum}`, 16, y + 5.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(formatarData(p.dataPedido), 44, y + 5.5);
+      doc.text(displayCliente, 62, y + 5.5);
+      doc.text(displayRepresentada, 102, y + 5.5);
+      doc.text(p.status.toUpperCase(), 140, y + 5.5);
+      doc.text(formatarMoeda(p.valorTotal), 170, y + 5.5, { align: 'right' });
+      doc.text(formatarMoeda(p.valorComissao), 195, y + 5.5, { align: 'right' });
+
+      y += 8;
+    });
+  }
+
+  // Totals Row
+  if (y > 260) {
+    doc.addPage();
+    y = 15;
+  }
+  y += 4;
+  doc.setFillColor(241, 245, 249);
+  doc.rect(15, y, 180, 10, 'F');
+  doc.rect(15, y, 180, 10, 'D');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('RESUMO DE TOTAIS:', 18, y + 6.5);
+  
+  doc.setFontSize(8);
+  doc.text(`Vendas Ativas: ${formatarMoeda(totalVendas)}`, 75, y + 6.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`Comissões Est.: ${formatarMoeda(totalComissoes)}`, 135, y + 6.5);
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Relatório de período gerado em ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 105, 280, { align: 'center' });
+  doc.text('© ' + new Date().getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468', 105, 285, { align: 'center' });
+
+  doc.save(`Resumo_Periodo_${dataDe || 'inicio'}_a_${dataAte || 'fim'}.pdf`);
+}
+
+/**
  * Generates a complete Dashboard summary report in PDF with custom filters.
  */
 export function gerarDashboardPDF(

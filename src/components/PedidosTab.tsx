@@ -3,7 +3,7 @@ import { Pedido, Cliente, Representada, OrderItem, PedidoStatus, Produto } from 
 import { formatarMoeda, formatarData } from '../utils';
 import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { gerarPedidoPDF, gerarResumoMensalPDF } from '../lib/pdfGenerator';
+import { gerarPedidoPDF, gerarResumoMensalPDF, gerarResumoPeriodoPDF } from '../lib/pdfGenerator';
 
 interface SearchableSelectProps {
   options: { id: string; label: string; sublabel?: string }[];
@@ -121,10 +121,14 @@ export default function PedidosTab({
   
   // Collapsible Filters
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
+  const [printPedido, setPrintPedido] = useState<Pedido | null>(null);
   
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('Todos');
+  const [filterDataDe, setFilterDataDe] = useState<string>('');
+  const [filterDataAte, setFilterDataAte] = useState<string>('');
+  const [filterRepresentadaId, setFilterRepresentadaId] = useState<string>('Todos');
 
   // Form states
   const [numeroPedido, setNumeroPedido] = useState('');
@@ -585,6 +589,54 @@ export default function PedidosTab({
     resetForm();
   };
 
+  const handleExportCSV = () => {
+    const headers = [
+      'Numero Pedido',
+      'Data de Emissao',
+      'Cliente',
+      'Representada',
+      'Status',
+      'Valor Total (R$)',
+      'Comissao (%)',
+      'Valor Comissao (R$)',
+      'Itens do Pedido'
+    ];
+
+    const rows = pedidosFiltrados.map(p => {
+      const cli = clientes.find(c => c.id === p.clienteId);
+      const rep = representadas.find(r => r.id === p.representadaId);
+      const itemsList = p.itens.map(it => `${it.descricao} (Qtd: ${it.quantidade})`).join(' | ');
+
+      return [
+        p.numeroPedido,
+        formatarData(p.dataPedido),
+        cli ? cli.nomeFantasia : 'N/A',
+        rep ? rep.nomeFantasia : 'N/A',
+        p.status,
+        p.valorTotal.toFixed(2),
+        p.comissaoPercentual.toFixed(2),
+        p.valorComissao.toFixed(2),
+        itemsList
+      ];
+    });
+
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(';'))
+    ].join('\n');
+
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Resumo_Exportacao_${filterDataDe || 'inicio'}_a_${filterDataAte || 'fim'}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Filter orders based on queries
   const pedidosFiltrados = pedidos.filter(p => {
     const cli = clientes.find(c => c.id === p.clienteId);
@@ -596,8 +648,12 @@ export default function PedidosTab({
       (rep && rep.nomeFantasia.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesStatus = statusFilter === 'Todos' || p.status === statusFilter;
+    
+    const matchesDataDe = !filterDataDe || p.dataPedido >= filterDataDe;
+    const matchesDataAte = !filterDataAte || p.dataPedido <= filterDataAte;
+    const matchesRepresentada = filterRepresentadaId === 'Todos' || p.representadaId === filterRepresentadaId;
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesDataDe && matchesDataAte && matchesRepresentada;
   });
 
   const totalCalculadoForm = itens.reduce((sum, item) => sum + item.totalItem, 0);
@@ -1111,28 +1167,30 @@ export default function PedidosTab({
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="bg-white rounded-xl border border-slate-200 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 shadow-xs">
-                {/* Filtro de Status */}
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Filtrar por Status</label>
-                  <select 
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-bold cursor-pointer focus:outline-none focus:border-emerald-600 focus:bg-white"
-                  >
-                    <option value="Todos">Todos os Status</option>
-                    <option value="Rascunho">Rascunho</option>
-                    <option value="Pendente">Pendente</option>
-                    <option value="Faturado">Faturado</option>
-                    <option value="Pago">Comissão Recebida</option>
-                    <option value="Cancelado">Cancelado</option>
-                  </select>
-                </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4 shadow-sm mb-2">
+                
+                {/* Grid de Filtros */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                  {/* Filtro de Status */}
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Filtrar por Status</label>
+                    <select 
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-bold cursor-pointer focus:outline-none focus:border-emerald-600 focus:bg-white"
+                    >
+                      <option value="Todos">Todos os Status</option>
+                      <option value="Rascunho">Rascunho</option>
+                      <option value="Pendente">Pendente</option>
+                      <option value="Faturado">Faturado</option>
+                      <option value="Pago">Comissão Recebida</option>
+                      <option value="Cancelado">Cancelado</option>
+                    </select>
+                  </div>
 
-                {/* Caixa de Busca */}
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Pesquisar Pedido / Cliente</label>
-                  <div className="relative w-full">
+                  {/* Caixa de Busca */}
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Pesquisar Pedido / Cliente</label>
                     <input
                       type="text"
                       placeholder="Buscar por Nº, cliente..."
@@ -1141,7 +1199,103 @@ export default function PedidosTab({
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-bold"
                     />
                   </div>
+
+                  {/* Filtro de Representada */}
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Representada</label>
+                    <select 
+                      value={filterRepresentadaId}
+                      onChange={(e) => setFilterRepresentadaId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-bold cursor-pointer focus:outline-none focus:border-emerald-600 focus:bg-white"
+                    >
+                      <option value="Todos">Todas as Fábricas</option>
+                      {representadas.map(rep => (
+                        <option key={rep.id} value={rep.id}>{rep.nomeFantasia}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Período De */}
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Período De</label>
+                    <input 
+                      type="date"
+                      value={filterDataDe}
+                      onChange={(e) => setFilterDataDe(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-mono"
+                    />
+                  </div>
+
+                  {/* Período Até */}
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Período Até</label>
+                    <input 
+                      type="date"
+                      value={filterDataAte}
+                      onChange={(e) => setFilterDataAte(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-mono"
+                    />
+                  </div>
                 </div>
+
+                {/* Central de Exportação e Relatórios */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-[11px] font-extrabold text-slate-750 uppercase tracking-wide block">Central de Exportação de Relatórios por Período</span>
+                    <p className="text-[10px] text-slate-400">
+                      Gere relatórios customizados no formato desejado com base nos filtros e período selecionados acima.
+                    </p>
+                    {pedidosFiltrados.length > 0 && (
+                      <span className="inline-block text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mt-1">
+                        {pedidosFiltrados.length} pedido(s) filtrado(s) pronto(s) para exportação
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 shrink-0">
+                    {/* Botão de Limpar Filtros */}
+                    {(statusFilter !== 'Todos' || searchQuery !== '' || filterRepresentadaId !== 'Todos' || filterDataDe !== '' || filterDataAte !== '') && (
+                      <button
+                        onClick={() => {
+                          setStatusFilter('Todos');
+                          setSearchQuery('');
+                          setFilterRepresentadaId('Todos');
+                          setFilterDataDe('');
+                          setFilterDataAte('');
+                        }}
+                        className="bg-white hover:bg-slate-150 border border-slate-200 text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                        title="Limpar todos os filtros ativos"
+                      >
+                        Limpar Filtros
+                      </button>
+                    )}
+
+                    {/* Botão Exportar CSV */}
+                    <button
+                      onClick={handleExportCSV}
+                      disabled={pedidosFiltrados.length === 0}
+                      className="bg-white hover:bg-slate-100 border border-slate-250 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                      title="Exportar planilha CSV com dados filtrados"
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Exportar Planilha (CSV)</span>
+                    </button>
+
+                    {/* Botão Exportar PDF */}
+                    <button
+                      onClick={() => {
+                        gerarResumoPeriodoPDF(pedidosFiltrados, clientes, representadas, filterDataDe, filterDataAte, empresaRepresentacao);
+                      }}
+                      disabled={pedidosFiltrados.length === 0}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-slate-300 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs shadow-emerald-100"
+                      title="Gerar PDF detalhado com dados filtrados"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Exportar Resumo (PDF)</span>
+                    </button>
+                  </div>
+                </div>
+
               </div>
             </motion.div>
           )}
@@ -1182,13 +1336,20 @@ export default function PedidosTab({
                       
                       <div className="flex items-center gap-1 ml-2">
                         <button 
+                          onClick={() => setPrintPedido(p)}
+                          className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-50 rounded transition-colors cursor-pointer"
+                          title="Visualização para Impressão (Print View)"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
                           onClick={() => {
                             const cli = clientes.find(c => c.id === p.clienteId);
                             const rep = representadas.find(r => r.id === p.representadaId);
                             gerarPedidoPDF(p, cli, rep, empresaRepresentacao);
                           }}
                           className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-50 rounded transition-colors cursor-pointer"
-                          title="Imprimir Pedido (PDF)"
+                          title="Baixar Pedido (PDF)"
                         >
                           <Printer className="w-3.5 h-3.5" />
                         </button>
@@ -1413,6 +1574,247 @@ export default function PedidosTab({
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      {/* Modal de Visualização para Impressão */}
+      <AnimatePresence>
+        {printPedido && (() => {
+          const cli = clientes.find(c => c.id === printPedido.clienteId);
+          const rep = representadas.find(r => r.id === printPedido.representadaId);
+          const logoToUse = rep?.logoUrl || empresaRepresentacao?.logoUrl;
+          
+          return (
+            <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:inset-auto">
+              <style>{`
+                @media print {
+                  body {
+                    background: white !important;
+                    color: black !important;
+                  }
+                  #root > :not(.print-wrapper) {
+                    display: none !important;
+                  }
+                  .print-wrapper {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    padding: 0;
+                    margin: 0;
+                    background: white !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                  }
+                  .no-print {
+                    display: none !important;
+                  }
+                }
+              `}</style>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-4xl w-full flex flex-col max-h-[90vh] print-wrapper print:shadow-none print:border-none print:max-h-none print:w-full"
+              >
+                {/* Control Header Bar */}
+                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0 no-print">
+                  <div className="flex items-center gap-2 text-slate-800">
+                    <Printer className="w-5 h-5 text-emerald-600" />
+                    <h3 className="font-serif font-bold text-base text-slate-800">
+                      Visualização para Impressão - Pedido #{printPedido.numeroPedido}
+                    </h3>
+                  </div>
+                  <div className="flex gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-100"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>Imprimir Documento</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrintPedido(null)}
+                      className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-medium hover:bg-slate-50 cursor-pointer"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Printable content container */}
+                <div className="p-8 overflow-y-auto space-y-6 print:p-0 bg-white print:overflow-visible" id="print-section">
+                  
+                  {/* Header Banner */}
+                  <div className="border-b-2 border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      {logoToUse ? (
+                        <img 
+                          src={logoToUse} 
+                          alt="Logo" 
+                          referrerPolicy="no-referrer"
+                          className="max-h-16 max-w-[150px] object-contain rounded-lg border border-slate-100 p-1" 
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-slate-900 text-white font-serif font-extrabold text-2xl flex items-center justify-center rounded-xl">
+                          RP
+                        </div>
+                      )}
+                      <div>
+                        <h2 className="font-serif font-extrabold text-lg text-slate-900 leading-tight">
+                          {empresaRepresentacao?.nomeFantasia || 'REPRESENTAÇÃO COMERCIAL'}
+                        </h2>
+                        <p className="text-xs text-slate-500 font-medium">
+                          {empresaRepresentacao?.razaoSocial || 'Sistema Integrado de Vendas'}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          {empresaRepresentacao?.cnpj ? `CNPJ: ${empresaRepresentacao.cnpj}` : 'Cópia Informativa de Pedido'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-left sm:text-right text-[11px] text-slate-500 space-y-0.5 font-mono">
+                      {empresaRepresentacao?.endereco && <p>{empresaRepresentacao.endereco}</p>}
+                      {empresaRepresentacao?.telefone && <p>Telefone: {empresaRepresentacao.telefone}</p>}
+                      {empresaRepresentacao?.email && <p>E-mail: {empresaRepresentacao.email}</p>}
+                    </div>
+                  </div>
+
+                  {/* Title and ID banner */}
+                  <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 print:bg-white print:border-slate-300">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">Documento de Venda</span>
+                      <h3 className="font-mono font-extrabold text-base text-slate-900">
+                        PEDIDO DE VENDA: #{printPedido.numeroPedido}
+                      </h3>
+                    </div>
+                    <div className="text-left sm:text-right font-mono text-xs">
+                      <p className="text-slate-500">Emissão: <strong className="text-slate-800">{formatarData(printPedido.dataPedido)}</strong></p>
+                      <p className="text-slate-500 mt-0.5">Status: <span className="font-bold text-emerald-700">{printPedido.status.toUpperCase()}</span></p>
+                    </div>
+                  </div>
+
+                  {/* Two columns: Representada and Cliente */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    {/* Representada Column */}
+                    <div className="border border-slate-200 rounded-xl p-4 space-y-2 print:border-slate-300">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-700 block border-b border-slate-100 pb-1">
+                        REPRESENTADA / FÁBRICA
+                      </span>
+                      <div className="space-y-1 text-xs">
+                        <p className="text-slate-800"><span className="text-slate-400 font-mono text-[11px]">Nome:</span> <strong>{rep?.nomeFantasia || 'N/A'}</strong></p>
+                        <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">Razão:</span> {rep?.razaoSocial || 'N/A'}</p>
+                        <p className="text-slate-600 font-mono text-[11px]"><span className="text-slate-400">CNPJ:</span> {rep?.cnpj || 'N/A'}</p>
+                        <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">Contato:</span> {rep?.contato || 'N/A'}</p>
+                        {rep?.telefone && <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">Telefone:</span> {rep.telefone}</p>}
+                        {rep?.email && <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">E-mail:</span> {rep.email}</p>}
+                      </div>
+                    </div>
+
+                    {/* Cliente Column */}
+                    <div className="border border-slate-200 rounded-xl p-4 space-y-2 print:border-slate-300">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-700 block border-b border-slate-100 pb-1">
+                        CLIENTE / COMPRADOR
+                      </span>
+                      <div className="space-y-1 text-xs">
+                        <p className="text-slate-800"><span className="text-slate-400 font-mono text-[11px]">Nome:</span> <strong>{cli?.nomeFantasia || 'N/A'}</strong></p>
+                        <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">Razão:</span> {cli?.razaoSocial || 'N/A'}</p>
+                        <p className="text-slate-600 font-mono text-[11px]"><span className="text-slate-400">CNPJ:</span> {cli?.cnpj || 'N/A'}</p>
+                        <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">Local:</span> {cli?.endereco || ''}, {cli?.cidade || 'N/A'}-{cli?.uf || ''}</p>
+                        {cli?.telefone && <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">Telefone:</span> {cli.telefone}</p>}
+                        {cli?.email && <p className="text-slate-600"><span className="text-slate-400 font-mono text-[11px]">E-mail:</span> {cli.email}</p>}
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Items List Table */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+                      Itens / Produtos Faturados
+                    </span>
+                    
+                    <div className="border border-slate-200 rounded-xl overflow-hidden print:border-slate-300">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-900 text-white font-mono text-[10px] uppercase">
+                            <th className="py-2.5 px-4 font-bold">Produto / Descrição</th>
+                            <th className="py-2.5 px-4 font-bold">Cor / Var</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Quant.</th>
+                            <th className="py-2.5 px-4 font-bold text-right">Preço Unit.</th>
+                            <th className="py-2.5 px-4 font-bold text-right">Total Item</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {printPedido.itens.map((it, idx) => (
+                            <tr key={it.id} className={idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}>
+                              <td className="py-3 px-4 font-serif font-bold text-slate-800">{it.descricao}</td>
+                              <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
+                                {[it.cor ? `Cor: ${it.cor}` : '', it.variacao ? `Var: ${it.variacao}` : ''].filter(Boolean).join(' | ') || '-'}
+                              </td>
+                              <td className="py-3 px-4 text-slate-700 font-mono text-center font-bold">{it.quantidade}</td>
+                              <td className="py-3 px-4 text-slate-600 font-mono text-right">{formatarMoeda(it.precoUnitario)}</td>
+                              <td className="py-3 px-4 text-slate-800 font-mono text-right font-bold">{formatarMoeda(it.totalItem)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Payment Terms and Observations */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="text-xs space-y-1">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">Condições de Pagamento</span>
+                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 italic text-slate-600 font-serif leading-relaxed">
+                        {printPedido.condicoesPagamento || 'Não informadas.'}
+                      </div>
+                    </div>
+                    <div className="text-xs space-y-1">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">Observações de Faturamento</span>
+                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 italic text-slate-600 font-serif leading-relaxed">
+                        {printPedido.observacoes || 'Nenhuma observação informada.'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financial Total Summary Panel */}
+                  <div className="border-t border-slate-200 pt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="text-xs text-slate-500 font-mono">
+                      <p>Vendedor: <strong className="text-slate-800">{currentUser?.nome || 'Raul Soares (Representante)'}</strong></p>
+                      <p>E-mail: {currentUser?.email || 'raulsoares@representaprosistema.com'}</p>
+                    </div>
+
+                    <div className="bg-slate-900 text-white rounded-xl p-4 min-w-[280px] space-y-1.5 font-mono text-xs ml-auto">
+                      <div className="flex justify-between text-slate-400">
+                        <span>VALOR TOTAL PRODUTOS:</span>
+                        <span className="font-bold text-white">{formatarMoeda(printPedido.valorTotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400 border-b border-dashed border-slate-700 pb-1.5">
+                        <span>COMISSÃO ESTIPULADA ({printPedido.comissaoPercentual}%):</span>
+                        <span className="font-bold text-emerald-400">{formatarMoeda(printPedido.valorComissao)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm pt-0.5">
+                        <span className="font-bold">TOTAL FATURADO:</span>
+                        <span className="font-extrabold text-white text-base">{formatarMoeda(printPedido.valorTotal)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Copyright Footer */}
+                  <div className="border-t border-dashed border-slate-200 pt-5 text-center text-[10px] text-slate-400 italic space-y-1">
+                    <p>Este documento é uma cópia digital informativa emitida via RepresentaPRO para faturamento comercial.</p>
+                    <p className="font-bold">© {new Date().getFullYear()} Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468</p>
+                  </div>
+
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
     </div>

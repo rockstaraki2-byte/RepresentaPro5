@@ -100,6 +100,24 @@ export default function DashboardTab({
   const clientesAtivosIds = new Set(pedidosValidos.map(p => p.clienteId));
   const totalClientesAtivos = clientesAtivosIds.size;
 
+  // --- Cálculos de Resumo do Topo (Solicitados pelo Usuário) ---
+  const currentMonthStr = meta?.anoMes || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const mesesNomesCompletos = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+  const [anoStr, mesStr] = currentMonthStr.split('-');
+  const nomeMesAtual = mesesNomesCompletos[parseInt(mesStr) - 1] || 'Mês Atual';
+
+  // Pedidos do mês atual (exclui cancelados)
+  const pedidosMesAtual = pedidos.filter(p => p.status !== 'Cancelado' && p.dataPedido.startsWith(currentMonthStr));
+  const faturamentoMesAtual = pedidosMesAtual.reduce((acc, p) => acc + p.valorTotal, 0);
+  const percentualMetaMesAtual = Math.round((faturamentoMesAtual / (meta?.metaMensal || 1)) * 100) || 0;
+
+  // Ticket médio por pedido
+  const ticketMedioMesAtual = faturamentoMesAtual / (pedidosMesAtual.length || 1);
+  const ticketMedioGeral = faturamentoTotal / (pedidosValidos.length || 1);
+
   // Meta percent progress
   const percentualMeta = Math.min(
     Math.round((faturamentoTotal / meta.metaMensal) * 100) || 0,
@@ -299,6 +317,67 @@ export default function DashboardTab({
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Cards de Resumo de Vendas e Ticket Médio (Solicitado pelo Usuário) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Card A: Vendas do Mês Atual vs Meta */}
+        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl border border-emerald-200 p-5 shadow-sm relative overflow-hidden">
+          <div className="absolute right-3 top-3 opacity-15">
+            <TrendingUp className="w-16 h-16 text-emerald-600" />
+          </div>
+          <span className="text-[10px] uppercase font-mono tracking-widest text-emerald-800 font-extrabold block">
+            Vendas em {nomeMesAtual}
+          </span>
+          <span className="text-2xl font-mono font-bold text-slate-800 block mt-1.5">
+            {formatarMoeda(faturamentoMesAtual)}
+          </span>
+          
+          <div className="mt-3.5 space-y-1.5">
+            <div className="flex justify-between items-center text-[10px] font-mono text-emerald-800 font-bold">
+              <span>Meta: {formatarMoeda(meta?.metaMensal || 0)}</span>
+              <span>{percentualMetaMesAtual}%</span>
+            </div>
+            <div className="w-full bg-slate-200/50 rounded-full h-1.5 overflow-hidden">
+              <div 
+                className="h-full bg-emerald-600 rounded-full" 
+                style={{ width: `${Math.min(percentualMetaMesAtual, 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Card B: Ticket Médio do Mês Atual */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm relative overflow-hidden">
+          <div className="absolute right-3 top-3 opacity-10">
+            <DollarSign className="w-16 h-16 text-slate-600" />
+          </div>
+          <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 font-extrabold block">
+            Ticket Médio ({nomeMesAtual})
+          </span>
+          <span className="text-2xl font-mono font-bold text-slate-800 block mt-1.5">
+            {formatarMoeda(ticketMedioMesAtual)}
+          </span>
+          <p className="text-[10px] text-slate-500 font-bold mt-3.5">
+            Média geral filtrada: <span className="text-slate-700 font-mono">{formatarMoeda(ticketMedioGeral)}</span>
+          </p>
+        </div>
+
+        {/* Card C: Quantidade de Pedidos do Mês */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm relative overflow-hidden">
+          <div className="absolute right-3 top-3 opacity-10">
+            <Briefcase className="w-16 h-16 text-slate-600" />
+          </div>
+          <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 font-extrabold block">
+            Volume de Pedidos ({nomeMesAtual})
+          </span>
+          <span className="text-2xl font-mono font-bold text-slate-800 block mt-1.5">
+            {pedidosMesAtual.length} {pedidosMesAtual.length === 1 ? 'pedido' : 'pedidos'}
+          </span>
+          <p className="text-[10px] text-slate-500 font-bold mt-3.5">
+            Ativos no mês corrente, excluindo cancelados.
+          </p>
+        </div>
       </div>
 
       {/* Resumo de Metas */}

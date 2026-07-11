@@ -308,6 +308,28 @@ export default function App() {
   // --- Real-time Firestore Subscription with Push Notifications ---
   const isFirstSnapshot = React.useRef(true);
 
+  // We use Refs to keep the latest state versions available inside the snapshot listener without triggering infinite recreation of the subscription
+  const representadasRef = React.useRef(representadas);
+  const clientesRef = React.useRef(clientes);
+  const pedidosRef = React.useRef(pedidos);
+  const activeEmpresaIdRef = React.useRef(activeEmpresaId);
+
+  useEffect(() => {
+    representadasRef.current = representadas;
+  }, [representadas]);
+
+  useEffect(() => {
+    clientesRef.current = clientes;
+  }, [clientes]);
+
+  useEffect(() => {
+    pedidosRef.current = pedidos;
+  }, [pedidos]);
+
+  useEffect(() => {
+    activeEmpresaIdRef.current = activeEmpresaId;
+  }, [activeEmpresaId]);
+
   useEffect(() => {
     if (loading) return;
 
@@ -324,10 +346,10 @@ export default function App() {
         snapshot.docChanges().forEach((change) => {
           const data = change.doc.data() as Pedido;
           
-          if (data.empresaRepresentacaoId === activeEmpresaId) {
+          if (data.empresaRepresentacaoId === activeEmpresaIdRef.current) {
             if (change.type === 'added') {
-              const repName = representadas.find(r => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
-              const cliName = clientes.find(c => c.id === data.clienteId)?.nomeFantasia || 'Cliente';
+              const repName = representadasRef.current.find(r => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
+              const cliName = clientesRef.current.find(c => c.id === data.clienteId)?.nomeFantasia || 'Cliente';
               
               triggerAppNotification(
                 'Novo Pedido de Venda 📦',
@@ -335,9 +357,9 @@ export default function App() {
                 'order'
               );
             } else if (change.type === 'modified') {
-              const oldVer = pedidos.find(p => p.id === data.id);
+              const oldVer = pedidosRef.current.find(p => p.id === data.id);
               if (data.statusComissao === 'Liberada' && (!oldVer || oldVer.statusComissao !== 'Liberada')) {
-                const repName = representadas.find(r => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
+                const repName = representadasRef.current.find(r => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
                 triggerAppNotification(
                   'Comissão Liberada! 💸',
                   `A comissão de ${formatarMoeda(data.valorComissao)} do pedido nº ${data.numeroPedido} (${repName}) foi liberada pelo administrador.`,
@@ -390,7 +412,7 @@ export default function App() {
     }));
 
     return () => unsubs.forEach(unsub => unsub());
-  }, [loading, activeEmpresaId, representadas, clientes, pedidos]);
+  }, [loading]);
 
   // --- Active Selections and Helpers ---
   const activeEmpresa = empresas.find(e => e.id === activeEmpresaId) || empresas[0];
@@ -448,8 +470,13 @@ export default function App() {
     await saveRepresentada(withEmp);
   };
   const handleEditRepresentada = async (rep: Representada) => {
-    setRepresentadas(representadas.map(r => r.id === rep.id ? rep : r));
-    await saveRepresentada(rep);
+    const existing = representadas.find(r => r.id === rep.id);
+    const updated = { ...existing, ...rep };
+    if (!updated.empresaRepresentacaoId) {
+      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
+    }
+    setRepresentadas(representadas.map(r => r.id === rep.id ? updated : r));
+    await saveRepresentada(updated);
   };
   const handleDeleteRepresentada = async (id: string) => {
     setRepresentadas(representadas.filter(r => r.id !== id));
@@ -464,8 +491,13 @@ export default function App() {
     await saveCliente(withEmp);
   };
   const handleEditCliente = async (cli: Cliente) => {
-    setClientes(clientes.map(c => c.id === cli.id ? cli : c));
-    await saveCliente(cli);
+    const existing = clientes.find(c => c.id === cli.id);
+    const updated = { ...existing, ...cli };
+    if (!updated.empresaRepresentacaoId) {
+      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
+    }
+    setClientes(clientes.map(c => c.id === cli.id ? updated : c));
+    await saveCliente(updated);
   };
   const handleDeleteCliente = async (id: string) => {
     setClientes(clientes.filter(c => c.id !== id));
@@ -480,8 +512,16 @@ export default function App() {
     await savePedido(withEmp);
   };
   const handleEditPedido = async (pedido: Pedido) => {
-    setPedidos(pedidos.map(p => p.id === pedido.id ? pedido : p));
-    await savePedido(pedido);
+    const existing = pedidos.find(p => p.id === pedido.id);
+    const updated = { ...existing, ...pedido };
+    if (!updated.empresaRepresentacaoId) {
+      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
+    }
+    if (!updated.createdByUserId) {
+      updated.createdByUserId = currentUser?.id;
+    }
+    setPedidos(pedidos.map(p => p.id === pedido.id ? updated : p));
+    await savePedido(updated);
   };
   const handleDeletePedido = async (id: string) => {
     setPedidos(pedidos.filter(p => p.id !== id));
@@ -496,8 +536,13 @@ export default function App() {
     await saveProduto(withEmp);
   };
   const handleEditProduto = async (prod: Produto) => {
-    setProdutos(produtos.map(p => p.id === prod.id ? prod : p));
-    await saveProduto(prod);
+    const existing = produtos.find(p => p.id === prod.id);
+    const updated = { ...existing, ...prod };
+    if (!updated.empresaRepresentacaoId) {
+      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
+    }
+    setProdutos(produtos.map(p => p.id === prod.id ? updated : p));
+    await saveProduto(updated);
   };
   const handleDeleteProduto = async (id: string) => {
     setProdutos(produtos.filter(p => p.id !== id));
@@ -1109,13 +1154,13 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-auto py-5 px-6">
+      <footer className="bg-white border-t border-slate-200 mt-auto py-5 px-6 pb-20 sm:pb-5">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-slate-400 font-mono">
           <span>&copy; {new Date().getFullYear()} Desenvolvido por Raul Soares. Todos os direitos reservados.</span>
           <div className="flex items-center gap-1.5">
-            <a href="https://wa.me/5532999098468" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 transition-colors font-medium">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-              Contato WhatsApp: (32) 99909-8468
+            <a href="https://wa.me/5532999098468" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 transition-colors font-bold bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-emerald-600 shrink-0"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.5-5.729-1.452L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.413 9.863-9.843.002-2.63-1.023-5.101-2.886-6.968C16.583 1.94 14.113.916 11.49.916c-5.434 0-9.858 4.414-9.861 9.845-.001 1.716.452 3.39 1.31 4.869L1.91 22.12l6.737-1.766zm10.37-4.144c-.3-.15-1.771-.875-2.046-.975-.276-.1-.477-.15-.677.15-.2.3-.777.975-.951 1.175-.174.2-.35.225-.65.075-1.041-.521-2.071-1.302-2.851-1.997-.6-.518-1.07-1.116-1.153-1.29-.1-.3-.01-.45.09-.599.09-.15.2-.3.3-.45.1-.15.15-.25.225-.4.075-.15.038-.3-.019-.45-.056-.15-.477-1.15-.653-1.575-.171-.413-.345-.356-.477-.356-.124-.002-.266-.002-.409-.002-.143 0-.377.054-.575.273-.2.22-.765.748-.765 1.822 0 1.074.78 2.114.89 2.263.11.15 1.516 2.315 3.673 3.243 1.171.504 1.882.68 2.538.74.656.06 1.252-.027 1.724-.097.525-.078 1.593-.65 1.819-1.275.225-.625.225-1.15.157-1.275-.069-.125-.262-.2-.562-.35z"/></svg>
+              <span>32 99909-8468</span>
             </a>
             <span className="hidden sm:inline-block text-slate-300 mx-2">|</span>
             <span className="flex items-center gap-1">
