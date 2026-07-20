@@ -151,19 +151,22 @@ async function startServer() {
   // Send sales order copy via email
   app.post('/api/email/send', async (req, res) => {
     try {
-      const { to, subject, body, attachment, attachmentName } = req.body;
+      const { to, subject, body, attachment, attachmentName, gmailUser: bodyGmailUser, gmailAppPass: bodyGmailPass, fromName: bodyFromName } = req.body;
       if (!to || !subject || !body) {
         return res.status(400).json({ error: 'Os campos "to", "subject" e "body" são obrigatórios.' });
       }
 
-      const gmailUser = process.env.GMAIL_USER;
-      const gmailPass = process.env.GMAIL_APP_PASS;
+      // Use the tenant-specific credentials passed in the body if available; otherwise fallback to env
+      const gmailUser = bodyGmailUser || process.env.GMAIL_USER;
+      const gmailPass = bodyGmailPass || process.env.GMAIL_APP_PASS;
+      const fromName = bodyFromName || process.env.SMTP_FROM_NAME || 'RepresentaPRO';
 
       console.log(`========================================`);
       console.log(`[EMAIL SENDING SERVICE]`);
       console.log(`Destinatário: ${to}`);
       console.log(`Assunto: ${subject}`);
-      console.log(`Gmail configurado: ${gmailUser ? 'Sim' : 'Não'}`);
+      console.log(`Gmail Remetente: ${gmailUser || 'Não configurado'}`);
+      console.log(`Origem das credenciais: ${bodyGmailUser ? 'Empresa (Multi-Tenant)' : 'Servidor (Global)'}`);
       console.log(`Anexo recebido: ${attachment ? 'Sim' : 'Não'} (${attachmentName || 'sem nome'})`);
       console.log(`========================================`);
 
@@ -176,7 +179,6 @@ async function startServer() {
           },
         });
 
-        const fromName = process.env.SMTP_FROM_NAME || 'RepresentaPRO';
         const mailOptions: any = {
           from: `"${fromName}" <${gmailUser}>`,
           to,
@@ -223,7 +225,16 @@ async function startServer() {
       }
     } catch (error: any) {
       console.error('Erro ao processar envio de e-mail:', error);
-      return res.status(500).json({ error: error.message || 'Erro interno ao processar o e-mail.' });
+      let errorMessage = error.message || 'Erro interno ao processar o e-mail.';
+      if (typeof errorMessage === 'string' && (
+        errorMessage.includes('534-5.7.9') || 
+        errorMessage.includes('Application-specific password required') || 
+        errorMessage.includes('Invalid login') || 
+        errorMessage.includes('EAUTH')
+      )) {
+        errorMessage = 'Falha de login no Gmail (Erro 534/EAUTH). Como a conta possui Verificação em Duas Etapas ativa, você DEVE gerar e cadastrar uma "Senha de App" de 16 dígitos nas configurações de segurança do Google (myaccount.google.com -> Segurança -> Senhas de app) e utilizá-la em vez de sua senha padrão do Gmail.';
+      }
+      return res.status(500).json({ error: errorMessage });
     }
   });
 

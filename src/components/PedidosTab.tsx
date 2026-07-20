@@ -251,6 +251,7 @@ export default function PedidosTab({
   const [emailBody, setEmailBody] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState(false);
+  const [recipientType, setRecipientType] = useState<'cliente' | 'fornecedor' | 'ambos'>('cliente');
 
   // Load order for editing if triggered from props
   useEffect(() => {
@@ -436,10 +437,47 @@ export default function PedidosTab({
     }).join('\n');
     
     setEmailPedido(p);
+    setRecipientType('cliente');
     setEmailRecipient(cli?.email || '');
     setEmailSubject(`Pedido de Venda #${p.numeroPedido} - ${rep?.nomeFantasia || 'Representada'}`);
     setEmailBody(`Prezado(a) ${cli?.contato || 'Cliente'},\n\nSegue em anexo a cópia digital do Pedido de Venda #${p.numeroPedido}.\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nValor Total: ${formatarMoeda(p.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
     setEmailSuccess(false);
+  };
+
+  const handleRecipientTypeChange = (type: 'cliente' | 'fornecedor' | 'ambos') => {
+    setRecipientType(type);
+    if (!emailPedido) return;
+    const cli = clientes.find(c => c.id === emailPedido.clienteId);
+    const rep = representadas.find(r => r.id === emailPedido.representadaId);
+    
+    let email = '';
+    if (type === 'cliente') {
+      email = cli?.email || '';
+    } else if (type === 'fornecedor') {
+      email = rep?.email || '';
+    } else if (type === 'ambos') {
+      const emails = [cli?.email, rep?.email].filter(Boolean);
+      email = emails.join(', ');
+    }
+    setEmailRecipient(email);
+
+    const itemsList = emailPedido.itens.map(it => {
+      let desc = `- ${it.descricao}: ${it.quantidade}x ${formatarMoeda(it.precoUnitario)}`;
+      if (it.cor) desc += ` | Cor: ${it.cor}`;
+      if (it.variacao) desc += ` | Var: ${it.variacao}`;
+      return desc;
+    }).join('\n');
+
+    let greeting = 'Prezado(a) Cliente';
+    if (type === 'fornecedor') {
+      greeting = `Prezado(a) ${rep?.contato || 'Fornecedor'}`;
+    } else if (type === 'ambos') {
+      greeting = `Prezados,`;
+    } else {
+      greeting = `Prezado(a) ${cli?.contato || 'Cliente'}`;
+    }
+
+    setEmailBody(`${greeting},\n\nSegue em anexo a cópia digital do Pedido de Venda #${emailPedido.numeroPedido}.\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nValor Total: ${formatarMoeda(emailPedido.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
   };
 
   const handleSendWhatsApp = (p: Pedido) => {
@@ -479,17 +517,19 @@ export default function PedidosTab({
       
       // Generate the PDF without saving/downloading in browser
       const doc = gerarPedidoPDF(emailPedido, cli, rep, empresaRepresentacao, true);
+      const blob = doc.output('blob');
       
-      let dataUri = '';
-      try {
-        dataUri = doc.output('datauristring');
-      } catch (errOutput) {
-        dataUri = doc.output('dataurlstring');
-      }
+      const blobToBase64 = (b: Blob): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(b);
+        });
+      };
       
-      // Decode percent-encoded characters like %2B, %2F, %3D back to actual Base64 chars
-      const decodedUri = decodeURIComponent(dataUri);
-      const parts = decodedUri.split(',');
+      const dataUri = await blobToBase64(blob);
+      const parts = dataUri.split(',');
       const pdfBase64 = parts[1] || parts[0];
       const pdfFilename = `Pedido_${emailPedido.numeroPedido}_${rep?.nomeFantasia || 'Venda'}.pdf`;
 
@@ -504,6 +544,9 @@ export default function PedidosTab({
           body: emailBody,
           attachment: pdfBase64,
           attachmentName: pdfFilename,
+          gmailUser: empresaRepresentacao?.gmailUser || '',
+          gmailAppPass: empresaRepresentacao?.gmailAppPass || '',
+          fromName: empresaRepresentacao?.nomeFantasia || 'RepresentaPRO',
         }),
       });
 
@@ -1489,10 +1532,52 @@ export default function PedidosTab({
                   </div>
                 ) : (
                   <>
+                    <div className="space-y-1.5 text-xs">
+                      <label className="block text-slate-500 font-mono uppercase text-[9px]">Enviar Para</label>
+                      <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => handleRecipientTypeChange('cliente')}
+                          className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
+                            recipientType === 'cliente'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                          }`}
+                          disabled={isSendingEmail}
+                        >
+                          Cliente
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRecipientTypeChange('fornecedor')}
+                          className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
+                            recipientType === 'fornecedor'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                          }`}
+                          disabled={isSendingEmail}
+                        >
+                          Fornecedor
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRecipientTypeChange('ambos')}
+                          className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
+                            recipientType === 'ambos'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                          }`}
+                          disabled={isSendingEmail}
+                        >
+                          Ambos
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="space-y-1 text-xs">
                       <label className="block text-slate-500 font-mono uppercase text-[9px]">E-mail do Destinatário <span className="text-red-500">*</span></label>
                       <input
-                        type="email"
+                        type="text"
                         required
                         placeholder="cliente@email.com"
                         value={emailRecipient}
@@ -1538,6 +1623,16 @@ export default function PedidosTab({
                       <span className="text-[9px] uppercase font-mono font-bold text-emerald-600 bg-white border border-emerald-100 px-1.5 py-0.5 rounded">
                         Anexo
                       </span>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-150 p-3 rounded-xl text-[11px] text-amber-800 leading-relaxed space-y-1">
+                      <p className="font-bold flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+                        Aviso de Configuração de E-mail:
+                      </p>
+                      <p>
+                        Para habilitar o envio automático em segundo plano, configure as chaves <strong className="font-mono">GMAIL_USER</strong> (seu e-mail Gmail) e <strong className="font-mono">GMAIL_APP_PASS</strong> (sua Senha de App do Google) na aba de <strong>Configurações (Secrets)</strong> do AI Studio. Caso contrário, o sistema abrirá o seu aplicativo local de e-mail como fallback seguro.
+                      </p>
                     </div>
 
                     {/* Footer */}

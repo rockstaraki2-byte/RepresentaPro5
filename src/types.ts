@@ -103,6 +103,8 @@ export interface EmpresaRepresentacao {
   isDefault: boolean;
   logoUrl?: string; // base64 data-URI or standard image URL
   corPrimaria?: string; // Hex color code for the primary palette
+  gmailUser?: string;
+  gmailAppPass?: string;
 }
 
 

@@ -85,6 +85,8 @@ export default function AdminTab({
     endereco: '',
     cidade: '',
     uf: '',
+    gmailUser: '',
+    gmailAppPass: '',
   });
 
   const [editingUsuarioId, setEditingUsuarioId] = useState<string | null>(null);
@@ -162,6 +164,8 @@ export default function AdminTab({
         cidade: '',
         uf: '',
         logoUrl: '',
+        gmailUser: '',
+        gmailAppPass: '',
       });
       setEditingEmpresaId(null);
     }
@@ -194,6 +198,8 @@ export default function AdminTab({
       uf: empresaForm.uf?.toUpperCase().trim() || '',
       logoUrl: empresaForm.logoUrl?.trim() || '',
       corPrimaria: empresaForm.corPrimaria || '#059669',
+      gmailUser: empresaForm.gmailUser?.trim() || '',
+      gmailAppPass: empresaForm.gmailAppPass?.trim() || '',
       isDefault: editingEmpresaId ? (empresas.find(e => e.id === editingEmpresaId)?.isDefault || false) : (empresas.length === 0),
     };
 
@@ -804,21 +810,58 @@ export default function AdminTab({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-[10px] font-mono uppercase text-slate-500">Cor Primária (Hexadecimal)</label>
+                  <label className="block text-[10px] font-mono uppercase text-slate-500 font-bold">Cor Primária (Hexadecimal)</label>
                   <div className="flex gap-2">
                     <input
                       type="color"
                       value={empresaForm.corPrimaria || '#059669'}
                       onChange={(e) => setEmpresaForm({ ...empresaForm, corPrimaria: e.target.value })}
-                      className="h-8 w-8 cursor-pointer rounded overflow-hidden"
+                      className="h-8 w-8 cursor-pointer rounded overflow-hidden bg-transparent"
                     />
                     <input
                       type="text"
                       placeholder="#059669"
                       value={empresaForm.corPrimaria || '#059669'}
                       onChange={(e) => setEmpresaForm({ ...empresaForm, corPrimaria: e.target.value })}
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none font-mono uppercase"
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none font-mono uppercase text-slate-800"
                     />
+                  </div>
+                </div>
+
+                {/* Seção de E-mail por Empresa (Multi-tenant SMTP) */}
+                <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-3.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-800">
+                      Configuração de E-mail da Empresa (Gmail)
+                    </span>
+                  </div>
+                  
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Configure os dados do Gmail desta empresa para que os pedidos enviados via e-mail saiam diretamente da conta dela. Se deixado em branco, o sistema usará as credenciais globais ou fallback local.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-mono uppercase text-slate-500">E-mail do Gmail</label>
+                      <input
+                        type="email"
+                        placeholder="exemplo@gmail.com"
+                        value={empresaForm.gmailUser || ''}
+                        onChange={(e) => setEmpresaForm({ ...empresaForm, gmailUser: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 text-slate-800"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-mono uppercase text-slate-500">Senha de App do Google</label>
+                      <input
+                        type="password"
+                        placeholder="xxxx xxxx xxxx xxxx"
+                        value={empresaForm.gmailAppPass || ''}
+                        onChange={(e) => setEmpresaForm({ ...empresaForm, gmailAppPass: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 text-slate-800"
+                      />
+                    </div>
                   </div>
                 </div>
               </form>
