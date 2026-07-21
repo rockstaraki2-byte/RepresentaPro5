@@ -219,7 +219,7 @@ async function startServer() {
       } else {
         // No email credentials configured
         return res.status(501).json({
-          error: 'Credenciais de e-mail (GMAIL_USER e GMAIL_APP_PASS) não configuradas no ambiente do servidor.',
+          error: 'Credenciais de e-mail não foram configuradas. Por favor, adicione o E-mail e a Senha de App na aba Admin (ao editar sua Empresa) ou nas configurações (Secrets) do sistema.',
           needsFallback: true
         });
       }
