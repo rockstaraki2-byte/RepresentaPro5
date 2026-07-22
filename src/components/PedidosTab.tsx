@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Pedido, Cliente, Representada, OrderItem, PedidoStatus, Produto } from '../types';
-import { formatarMoeda, formatarData } from '../utils';
-import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles } from 'lucide-react';
+import { formatarMoeda, formatarData, calcularParcelas } from '../utils';
+import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { gerarPedidoPDF, gerarResumoMensalPDF, gerarResumoPeriodoPDF } from '../lib/pdfGenerator';
 
@@ -831,7 +831,7 @@ export default function PedidosTab({
                           options={representadas.map(r => ({
                             id: r.id,
                             label: r.nomeFantasia,
-                            sublabel: currentUser?.role === 'Administrador' ? `CNPJ: ${r.cnpj} | ${r.comissaoPadrao}% comissão padrão` : `CNPJ: ${r.cnpj}`
+                            sublabel: `CNPJ: ${r.cnpj} | ${r.comissaoPadrao}% comissão padrão`
                           }))}
                           value={representadaId}
                           onChange={(id) => handleRepresentadaChange(id)}
@@ -1866,6 +1866,22 @@ export default function PedidosTab({
                       <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">Condições de Pagamento</span>
                       <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 italic text-slate-600 font-serif leading-relaxed">
                         {printPedido.condicoesPagamento || 'Não informadas.'}
+                        
+                        {printPedido.condicoesPagamento && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {calcularParcelas(printPedido.valorTotal, printPedido.dataPedido, printPedido.condicoesPagamento).map((p) => (
+                              <div key={p.numero} className="bg-white border border-slate-200 rounded-md p-2 shadow-sm text-center min-w-[70px]">
+                                <div className="text-[9px] font-bold text-slate-500 uppercase flex justify-center items-center gap-1">
+                                  <Calendar className="w-3 h-3" />
+                                  {formatarData(p.dataVencimento)}
+                                </div>
+                                <div className="font-extrabold text-emerald-700 mt-0.5 text-xs">
+                                  {formatarMoeda(p.valor)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="text-xs space-y-1">
@@ -1884,13 +1900,9 @@ export default function PedidosTab({
                     </div>
 
                     <div className="bg-slate-900 text-white rounded-xl p-4 min-w-[280px] space-y-1.5 font-mono text-xs ml-auto">
-                      <div className="flex justify-between text-slate-400">
+                      <div className="flex justify-between text-slate-400 border-b border-dashed border-slate-700 pb-1.5">
                         <span>VALOR TOTAL PRODUTOS:</span>
                         <span className="font-bold text-white">{formatarMoeda(printPedido.valorTotal)}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400 border-b border-dashed border-slate-700 pb-1.5">
-                        <span>COMISSÃO ESTIPULADA ({printPedido.comissaoPercentual}%):</span>
-                        <span className="font-bold text-emerald-400">{formatarMoeda(printPedido.valorComissao)}</span>
                       </div>
                       <div className="flex justify-between text-sm pt-0.5">
                         <span className="font-bold">TOTAL FATURADO:</span>

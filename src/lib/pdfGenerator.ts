@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Pedido, Cliente, Representada } from '../types';
-import { formatarMoeda, formatarData } from '../utils';
+import { formatarMoeda, formatarData, calcularParcelas } from '../utils';
 
 /**
  * Generates a clean, professional vector-based PDF for a single sales order.
@@ -176,6 +176,40 @@ export function gerarPedidoPDF(
     const splitCond = doc.splitTextToSize(pedido.condicoesPagamento, 180);
     doc.text(splitCond, 15, y + 4.5);
     y += 6 + (splitCond.length * 4.5);
+
+    const parcelas = calcularParcelas(pedido.valorTotal, pedido.dataPedido, pedido.condicoesPagamento);
+    if (parcelas.length > 0) {
+      y += 2;
+      const boxWidth = 32;
+      const boxHeight = 12;
+      const startX = 15;
+      let currentX = startX;
+      
+      parcelas.forEach((p) => {
+        if (currentX + boxWidth > 195) {
+          currentX = startX;
+          y += boxHeight + 4;
+        }
+        
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(currentX, y, boxWidth, boxHeight, 1.5, 1.5, 'FD');
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text(formatarData(p.dataVencimento), currentX + (boxWidth / 2), y + 4.5, { align: 'center' });
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+        doc.text(formatarMoeda(p.valor), currentX + (boxWidth / 2), y + 9.5, { align: 'center' });
+        
+        currentX += boxWidth + 4;
+      });
+      y += boxHeight + 4;
+      doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]); // reset text color
+    }
   }
 
   // Observações se houver
@@ -206,11 +240,6 @@ export function gerarPedidoPDF(
   doc.setFontSize(8);
   doc.text('Total Produtos faturados:', 120, y + 12);
   doc.text(formatarMoeda(pedido.valorTotal), 190, y + 12, { align: 'right' });
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-  doc.text(`Sua Comissão (${pedido.comissaoPercentual}%):`, 120, y + 18);
-  doc.text(formatarMoeda(pedido.valorComissao), 190, y + 18, { align: 'right' });
 
   // Add a nice footer
   doc.setFont('helvetica', 'italic');

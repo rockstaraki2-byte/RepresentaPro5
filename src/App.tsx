@@ -427,7 +427,7 @@ export default function App() {
   const handleSelectEmpresa = (id: string) => {
     setActiveEmpresaId(id);
     // Auto-select corresponding company user when switching to keep consistency (unless current is Raul)
-    const isRaul = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul';
+    const isRaul = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
     if (!isRaul) {
       const companyUser = usuarios.find(u => u.empresaRepresentacaoId === id && u.ativo);
       if (companyUser) {
@@ -446,7 +446,7 @@ export default function App() {
 
   // --- Data Isolation Filter Layers ---
   // We filter all business collections by activeEmpresaId so different companies NEVER see each other's data!
-  const isRaul = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul';
+  const isRaul = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
   const showAllData = isRaul && activeEmpresaId === 'all';
 
   const filteredRepresentadas = showAllData ? representadas : representadas.filter(r => r.empresaRepresentacaoId === activeEmpresaId);
@@ -551,7 +551,7 @@ export default function App() {
 
   // Empresas de Representação (Razões Sociais)
   const handleAddEmpresa = async (emp: EmpresaRepresentacao) => {
-    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul';
+    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
     if (!isRaulUser) {
       alert('Apenas o administrador geral Raul possui permissão para cadastrar razões sociais.');
       return;
@@ -560,7 +560,7 @@ export default function App() {
     await saveEmpresa(emp);
   };
   const handleEditEmpresa = async (emp: EmpresaRepresentacao) => {
-    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul';
+    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
     if (!isRaulUser) {
       alert('Apenas o administrador geral Raul possui permissão para editar razões sociais.');
       return;
@@ -569,7 +569,7 @@ export default function App() {
     await saveEmpresa(emp);
   };
   const handleDeleteEmpresa = async (id: string) => {
-    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul';
+    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
     if (!isRaulUser) {
       alert('Apenas o administrador geral Raul possui permissão para remover razões sociais.');
       return;

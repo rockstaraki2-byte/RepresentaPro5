@@ -175,15 +175,13 @@ export default function RepresentadasTab({
             <p className="text-[11px] text-slate-400">Cadastre as indústrias e empresas parceiras que você representa comercialmente.</p>
           </div>
         </div>
-        {currentUser?.role === 'Administrador' && (
-          <button
-            onClick={() => { resetForm(); setIsFormExpanded(true); }}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-100"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nova Representada</span>
-          </button>
-        )}
+        <button
+          onClick={() => { resetForm(); setIsFormExpanded(true); }}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-100"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Nova Representada</span>
+        </button>
       </div>
 
       <AnimatePresence>
@@ -404,11 +402,9 @@ export default function RepresentadasTab({
                           <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{rep.cnpj}</p>
                         </div>
                       </div>
-                      {currentUser?.role === 'Administrador' && (
-                        <span className="bg-emerald-50 text-emerald-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-emerald-100 shrink-0">
-                          {rep.comissaoPadrao}% comissão
-                        </span>
-                      )}
+                      <span className="bg-emerald-50 text-emerald-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-emerald-100 shrink-0">
+                        {rep.comissaoPadrao}% comissão
+                      </span>
                     </div>
 
                     <div className="border-t border-dashed border-slate-100 pt-2.5 space-y-1.5 text-xs text-slate-600">
@@ -451,24 +447,22 @@ export default function RepresentadasTab({
                   </div>
 
                   {/* Ações */}
-                  {currentUser?.role === 'Administrador' && (
-                    <div className="absolute right-3 bottom-14 flex items-center gap-1.5 bg-white border border-slate-100 p-1 rounded-lg shadow-sm">
-                      <button 
-                        onClick={() => handleEditClick(rep)}
-                        className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-50 rounded transition-colors cursor-pointer"
-                        title="Editar"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteClick(rep.id, rep.nomeFantasia)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
-                        title="Excluir"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  <div className="absolute right-3 bottom-14 flex items-center gap-1.5 bg-white border border-slate-100 p-1 rounded-lg shadow-sm">
+                    <button 
+                      onClick={() => handleEditClick(rep)}
+                      className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-50 rounded transition-colors cursor-pointer"
+                      title="Editar"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteClick(rep.id, rep.nomeFantasia)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               );
             })}

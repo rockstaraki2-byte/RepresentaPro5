@@ -99,3 +99,86 @@ export const consultarCNPJ = async (rawCnpj: string): Promise<any> => {
   throw new Error('Não foi possível encontrar este CNPJ ou as APIs públicas estão instáveis. Por favor, tente preencher os dados manualmente.');
 };
 
+export interface Parcela {
+  numero: number;
+  dias: number;
+  dataVencimento: string;
+  valor: number;
+}
+
+export const calcularParcelas = (valorTotal: number, dataBase: string, condicoes: string): Parcela[] => {
+  if (!condicoes) return [];
+
+  const lowerCond = condicoes.toLowerCase();
+  let entradaPercent = 0;
+  const hasEntrada = lowerCond.includes('entrada') || lowerCond.includes('à vista') || lowerCond.includes('a vista') || lowerCond.includes('sinal');
+  
+  const percMatch = lowerCond.match(/(\d+(?:[,.]\d+)?)%/);
+  if (percMatch) {
+    entradaPercent = parseFloat(percMatch[1].replace(',', '.'));
+  }
+
+  const textForDays = lowerCond.replace(/(\d+(?:[,.]\d+)?)%/g, '');
+  const regexDias = /(\d+)/g;
+  let diasParsed: number[] = [];
+  let m;
+  while ((m = regexDias.exec(textForDays)) !== null) {
+    diasParsed.push(parseInt(m[1], 10));
+  }
+
+  if (diasParsed.length === 0 && !hasEntrada) {
+    diasParsed = [0];
+  }
+
+  let parcelas: Parcela[] = [];
+  let valorRestante = valorTotal;
+
+  if (hasEntrada || entradaPercent > 0) {
+    let valorEntrada = 0;
+    if (entradaPercent > 0) {
+      valorEntrada = (valorTotal * entradaPercent) / 100;
+    } else {
+      valorEntrada = valorTotal / (diasParsed.length + 1);
+    }
+    
+    parcelas.push({
+      numero: 1,
+      dias: 0,
+      dataVencimento: '',
+      valor: valorEntrada
+    });
+    valorRestante -= valorEntrada;
+  }
+
+  if (diasParsed.length > 0) {
+    const valorPorParcelaRestante = valorRestante / diasParsed.length;
+    diasParsed.forEach((dias) => {
+      parcelas.push({
+        numero: parcelas.length + 1,
+        dias: dias,
+        dataVencimento: '',
+        valor: valorPorParcelaRestante
+      });
+    });
+  } else if (valorRestante > 0.01 && parcelas.length > 0) {
+      parcelas.push({
+          numero: parcelas.length + 1,
+          dias: 30,
+          dataVencimento: '',
+          valor: valorRestante
+      });
+  }
+
+  const baseDate = new Date(dataBase);
+  baseDate.setHours(12, 0, 0, 0);
+
+  return parcelas.map((p) => {
+    const dataParcela = new Date(baseDate.getTime());
+    dataParcela.setDate(dataParcela.getDate() + p.dias);
+    return {
+      ...p,
+      dataVencimento: dataParcela.toISOString().split('T')[0]
+    };
+  });
+};
+
