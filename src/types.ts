@@ -9,6 +9,8 @@ export interface Representada {
   segmento: string;
   contato: string;
   logoUrl?: string; // Base64 data-URI or standard image URL
+  catalogoUrl?: string; // Base64 PDF data-URI or PDF link
+  catalogoNome?: string; // Filename of PDF catalog
   empresaRepresentacaoId?: string; // Multi-tenant link
 }
 

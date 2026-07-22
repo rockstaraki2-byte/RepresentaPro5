@@ -4,6 +4,8 @@ import { formatarMoeda, formatarData, calcularParcelas } from '../utils';
 import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { gerarPedidoPDF, gerarResumoMensalPDF, gerarResumoPeriodoPDF } from '../lib/pdfGenerator';
+import CatalogViewerModal from './CatalogViewerModal';
+import { getPdfFromIndexedDB } from '../lib/pdfStorage';
 
 interface SearchableSelectProps {
   options: { id: string; label: string; sublabel?: string }[];
@@ -118,6 +120,24 @@ export default function PedidosTab({
   currentUser,
 }: PedidosTabProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [activeCatalogViewer, setActiveCatalogViewer] = useState<{ url: string; title: string; filename?: string } | null>(null);
+
+  const handleOpenCatalog = async (rep: Representada) => {
+    let url = rep.catalogoUrl;
+    if (!url || url.startsWith('indexeddb:')) {
+      const stored = await getPdfFromIndexedDB(rep.id);
+      if (stored) url = stored;
+    }
+    if (url) {
+      setActiveCatalogViewer({
+        url,
+        title: rep.nomeFantasia,
+        filename: rep.catalogoNome || 'Catálogo.pdf'
+      });
+    } else {
+      alert('Catálogo PDF não encontrado para esta fábrica.');
+    }
+  };
   
   // Collapsible Filters
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
@@ -826,7 +846,25 @@ export default function PedidosTab({
 
                       {/* Representada */}
                       <div className="space-y-1">
-                        <label className="block text-xs font-mono uppercase text-slate-500">Representada (Fábrica) <span className="text-red-500">*</span></label>
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-mono uppercase text-slate-500">Representada (Fábrica) <span className="text-red-500">*</span></label>
+                          {(() => {
+                            const rep = representadas.find(r => r.id === representadaId);
+                            if (rep?.catalogoUrl || rep?.catalogoNome) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCatalog(rep)}
+                                  className="text-[10px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer"
+                                >
+                                  <FileText className="w-3 h-3 text-emerald-700" />
+                                  <span>Ver Catálogo PDF</span>
+                                </button>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                         <SearchableSelect
                           options={representadas.map(r => ({
                             id: r.id,
@@ -968,10 +1006,29 @@ export default function PedidosTab({
                   {/* Adicionador de Itens lateral */}
                   <div className="lg:col-span-4 bg-slate-50 border border-slate-200/80 p-5 rounded-xl flex flex-col justify-between">
                     <div>
-                      <h4 className="font-serif font-bold text-sm text-slate-800 flex items-center gap-1.5 mb-3 border-b border-slate-200 pb-2">
-                        <ShoppingCart className="w-4 h-4 text-emerald-600" />
-                        <span>Inserir Item / Produto</span>
-                      </h4>
+                      <div className="flex items-center justify-between mb-3 border-b border-slate-200 pb-2">
+                        <h4 className="font-serif font-bold text-sm text-slate-800 flex items-center gap-1.5">
+                          <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                          <span>Inserir Item / Produto</span>
+                        </h4>
+                        {(() => {
+                          const rep = representadas.find(r => r.id === representadaId);
+                          if (rep?.catalogoUrl || rep?.catalogoNome) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCatalog(rep)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                                title="Consultar Catálogo PDF da Fábrica"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>Abrir Catálogo PDF</span>
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                       
                       <form onSubmit={handleAddItem} className="space-y-3">
                         <div className="space-y-1">
@@ -1923,6 +1980,15 @@ export default function PedidosTab({
           );
         })()}
       </AnimatePresence>
+
+      {/* Modal Visualizador do Catálogo PDF da Fábrica */}
+      <CatalogViewerModal
+        isOpen={!!activeCatalogViewer}
+        onClose={() => setActiveCatalogViewer(null)}
+        title={activeCatalogViewer?.title || 'Fábrica'}
+        pdfUrl={activeCatalogViewer?.url}
+        pdfName={activeCatalogViewer?.filename}
+      />
 
     </div>
   );

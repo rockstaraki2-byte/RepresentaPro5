@@ -14,9 +14,17 @@ import {
   Search, 
   ChevronDown, 
   ChevronUp, 
-  Loader2 
+  Loader2,
+  FileText,
+  Upload,
+  X,
+  Eye,
+  ExternalLink,
+  Paperclip
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import CatalogViewerModal from './CatalogViewerModal';
+import { savePdfToIndexedDB, getPdfFromIndexedDB } from '../lib/pdfStorage';
 
 interface RepresentadasTabProps {
   representadas: Representada[];
@@ -38,6 +46,7 @@ export default function RepresentadasTab({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormExpanded, setIsFormExpanded] = useState(false);
   const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
+  const [activeCatalogViewer, setActiveCatalogViewer] = useState<{ url: string; title: string; filename?: string } | null>(null);
   
   const [form, setForm] = useState<Partial<Representada>>({
     nomeFantasia: '',
@@ -48,6 +57,8 @@ export default function RepresentadasTab({
     email: '',
     segmento: '',
     contato: '',
+    catalogoUrl: '',
+    catalogoNome: '',
   });
 
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -62,9 +73,43 @@ export default function RepresentadasTab({
       email: '',
       segmento: '',
       contato: '',
+      catalogoUrl: '',
+      catalogoNome: '',
     });
     setEditingId(null);
     setValidationError(null);
+  };
+
+  const handleCatalogFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      setValidationError('Por favor, selecione um arquivo no formato PDF.');
+      return;
+    }
+
+    // Limit check set to 35MB
+    if (file.size > 35 * 1024 * 1024) {
+      setValidationError('O arquivo PDF excede o limite de 35MB. Para arquivos maiores, utilize o campo de link externo (Google Drive/Dropbox).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      setForm(prev => ({
+        ...prev,
+        catalogoUrl: result,
+        catalogoNome: file.name
+      }));
+      setValidationError('✓ Catálogo PDF anexado com sucesso!');
+      setTimeout(() => setValidationError(null), 4000);
+    };
+    reader.onerror = () => {
+      setValidationError('Erro ao ler o arquivo PDF. Tente novamente.');
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleEditClick = (rep: Representada) => {
@@ -137,7 +182,13 @@ export default function RepresentadasTab({
       email: form.email?.trim() || '',
       segmento: form.segmento?.trim() || 'Geral',
       contato: form.contato?.trim() || '',
+      catalogoUrl: form.catalogoUrl || '',
+      catalogoNome: form.catalogoNome || '',
     };
+
+    if (finalForm.catalogoUrl && finalForm.catalogoUrl.startsWith('data:')) {
+      savePdfToIndexedDB(finalForm.id, finalForm.catalogoUrl);
+    }
 
     if (editingId) {
       onEdit(finalForm);
@@ -147,6 +198,25 @@ export default function RepresentadasTab({
 
     resetForm();
     setIsFormExpanded(false); // Collapsed on success
+  };
+
+  const handleOpenCatalog = async (rep: Partial<Representada>) => {
+    let url = rep.catalogoUrl;
+    if (!url || url.startsWith('indexeddb:')) {
+      if (rep.id) {
+        const stored = await getPdfFromIndexedDB(rep.id);
+        if (stored) url = stored;
+      }
+    }
+    if (url) {
+      setActiveCatalogViewer({
+        url,
+        title: rep.nomeFantasia || 'Fábrica',
+        filename: rep.catalogoNome || 'Catálogo.pdf'
+      });
+    } else {
+      setValidationError('Catálogo PDF não encontrado.');
+    }
   };
 
   const handleDeleteClick = (id: string, name: string) => {
@@ -330,15 +400,94 @@ export default function RepresentadasTab({
                     </div>
 
                     {/* E-mail */}
-                    <div className="space-y-1 md:col-span-2">
+                    <div className="space-y-1 md:col-span-1">
                       <label className="block text-xs font-mono uppercase text-slate-500">E-mail Comercial</label>
                       <input 
-                        type="type"
+                        type="text"
                         placeholder="pedidos@empresa.com.br"
                         value={form.email || ''}
                         onChange={(e) => setForm({ ...form, email: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800"
                       />
+                    </div>
+
+                    {/* Upload do Catálogo PDF */}
+                    <div className="space-y-1 md:col-span-4 border-t border-slate-100 pt-3 mt-2">
+                      <label className="block text-xs font-mono uppercase text-slate-600 font-bold flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-emerald-600" />
+                        <span>Catálogo de Produtos em PDF (Opção de Upload)</span>
+                      </label>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                        {/* File Upload Box */}
+                        <div className="relative border-2 border-dashed border-slate-200 hover:border-emerald-500 rounded-xl p-3 text-center bg-slate-50 transition-colors">
+                          <input 
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            onChange={handleCatalogFileUpload}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            id="pdf-catalog-input"
+                          />
+                          <div className="flex flex-col items-center justify-center gap-1 text-slate-500">
+                            <Upload className="w-5 h-5 text-emerald-600" />
+                            <span className="text-xs font-medium text-slate-700">Clique ou arraste um arquivo PDF aqui</span>
+                            <span className="text-[10px] text-slate-400">Até 30MB para envio direto</span>
+                          </div>
+                        </div>
+
+                        {/* Direct URL input or current file status */}
+                        <div className="space-y-2">
+                          {form.catalogoUrl ? (
+                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                              <div className="flex items-center gap-2 overflow-hidden pr-2">
+                                <FileText className="w-5 h-5 text-emerald-700 shrink-0" />
+                                <div className="truncate">
+                                  <span className="text-xs font-bold text-emerald-900 block truncate">
+                                    {form.catalogoNome || 'Catálogo Anexado.pdf'}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-700 block">PDF pronto para visualização</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCatalog(form)}
+                                  className="p-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                                  title="Testar Visualização"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Ver</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setForm({ ...form, catalogoUrl: '', catalogoNome: '' })}
+                                  className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-all cursor-pointer"
+                                  title="Remover Catálogo"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <span className="text-[11px] text-slate-500 block">Ou cole o Link Externo (URL do PDF no Google Drive, Dropbox, etc):</span>
+                              <div className="flex gap-1.5">
+                                <input 
+                                  type="url"
+                                  placeholder="https://exemplo.com/catalogo.pdf"
+                                  value={form.catalogoUrl || ''}
+                                  onChange={(e) => setForm({ 
+                                    ...form, 
+                                    catalogoUrl: e.target.value,
+                                    catalogoNome: e.target.value ? 'Catálogo Externo (Link)' : ''
+                                  })}
+                                  className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                   </div>
@@ -431,6 +580,31 @@ export default function RepresentadasTab({
                           <span>{rep.email}</span>
                         </div>
                       )}
+
+                      {/* Catálogo PDF Badge / Button */}
+                      {(rep.catalogoUrl || rep.catalogoNome) ? (
+                        <div className="pt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCatalog(rep)}
+                            className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all flex items-center justify-between cursor-pointer"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>Catálogo PDF</span>
+                            </span>
+                            <span className="text-[10px] bg-emerald-700 text-white px-2 py-0.5 rounded font-sans flex items-center gap-1">
+                              <Eye className="w-3 h-3" />
+                              Visualizar
+                            </span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="pt-1 text-[10px] text-slate-400 italic flex items-center gap-1">
+                          <Paperclip className="w-3 h-3" />
+                          Sem catálogo em PDF anexado
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -469,6 +643,15 @@ export default function RepresentadasTab({
           </div>
         )}
       </div>
+
+      {/* Modal Visualizador do Catálogo PDF */}
+      <CatalogViewerModal
+        isOpen={!!activeCatalogViewer}
+        onClose={() => setActiveCatalogViewer(null)}
+        title={activeCatalogViewer?.title || 'Fábrica'}
+        pdfUrl={activeCatalogViewer?.url}
+        pdfName={activeCatalogViewer?.filename}
+      />
     </div>
   );
 }

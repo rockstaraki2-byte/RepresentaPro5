@@ -220,7 +220,15 @@ export default function App() {
 
   // --- LocalStorage Synchronization ---
   useEffect(() => {
-    try { localStorage.setItem('rep_representadas', JSON.stringify(representadas)); } catch(e) { console.error('rep_representadas', e); }
+    try {
+      const sanitized = representadas.map(rep => {
+        if (rep.catalogoUrl && rep.catalogoUrl.startsWith('data:') && rep.catalogoUrl.length > 500000) {
+          return { ...rep, catalogoUrl: `indexeddb:${rep.id}` };
+        }
+        return rep;
+      });
+      localStorage.setItem('rep_representadas', JSON.stringify(sanitized));
+    } catch(e) { console.error('rep_representadas', e); }
   }, [representadas]);
 
   useEffect(() => {

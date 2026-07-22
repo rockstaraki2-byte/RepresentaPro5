@@ -166,7 +166,11 @@ export async function getRepresentadas(): Promise<Representada[]> {
 
 export async function saveRepresentada(rep: Representada): Promise<void> {
   try {
-    await setDoc(doc(db, 'representadas', rep.id), removeUndefinedFields(rep));
+    const cleanRep = { ...rep };
+    if (cleanRep.catalogoUrl && cleanRep.catalogoUrl.startsWith('data:') && cleanRep.catalogoUrl.length > 500000) {
+      cleanRep.catalogoUrl = `indexeddb:${cleanRep.id}`;
+    }
+    await setDoc(doc(db, 'representadas', cleanRep.id), removeUndefinedFields(cleanRep));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `representadas/${rep.id}`);
   }
