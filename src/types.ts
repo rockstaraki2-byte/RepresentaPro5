@@ -11,6 +11,9 @@ export interface Representada {
   logoUrl?: string; // Base64 data-URI or standard image URL
   catalogoUrl?: string; // Base64 PDF data-URI or PDF link
   catalogoNome?: string; // Filename of PDF catalog
+  fretePadraoTipo?: 'percentual' | 'fixo' | 'manual' | 'nenhum';
+  fretePadraoValor?: number;
+  freteModalidadePadrao?: 'FOB' | 'CIF' | 'Sem Frete';
   empresaRepresentacaoId?: string; // Multi-tenant link
 }
 
@@ -25,11 +28,13 @@ export interface Cliente {
   telefone: string;
   email: string;
   contato: string;
+  tipoFaturamento?: 'Nota Fiscal' | 'Notinha'; // Opção de Faturamento (Nota Fiscal x Notinha)
   empresaRepresentacaoId?: string; // Multi-tenant link
 }
 
 export interface OrderItem {
   id: string;
+  codigo?: string;
   descricao: string;
   quantidade: number;
   precoUnitario: number;
@@ -47,6 +52,13 @@ export interface Pedido {
   representadaId: string;
   dataPedido: string; // YYYY-MM-DD
   itens: OrderItem[];
+  valorSubtotal?: number; // Soma do valor total dos produtos
+  tipoFaturamento?: 'Nota Fiscal' | 'Notinha'; // Faturamento com ou sem Nota Fiscal
+  opcaoFrete?: 'percentual' | 'fixo' | 'manual' | 'nenhum'; // Método de cálculo
+  tipoFrete?: 'FOB' | 'CIF' | 'Sem Frete'; // Modalidade de frete (Destinatário vs Emitente)
+  valorFrete?: number; // Valor calculado em R$
+  percentualFrete?: number; // % caso opção seja percentual
+  freteSomarNoTotal?: boolean; // Se o valor do frete é somado ao total final do pedido
   valorTotal: number;
   comissaoPercentual: number; // Porcentagem de comissão deste pedido
   valorComissao: number; // Calculado: valorTotal * (comissaoPercentual / 100)
@@ -78,6 +90,22 @@ export interface Produto {
   variacao?: string;      // Variações/Tamanho
 }
 
+export interface UserPermissions {
+  verDashboard?: boolean;
+  verTodasVendas?: boolean;
+  verComissoes?: boolean;
+  verClientes?: boolean;
+  editarClientes?: boolean;
+  verProdutos?: boolean;
+  editarProdutos?: boolean;
+  verRepresentadas?: boolean;
+  verFinanceiro?: boolean;
+  criarPedidos?: boolean;
+  editarPedidos?: boolean;
+  excluirPedidos?: boolean;
+  gerenciarUsuarios?: boolean;
+}
+
 // User role access levels
 export type UserRole = 'Administrador' | 'Representante' | 'Vendedor';
 
@@ -89,6 +117,7 @@ export interface Usuario {
   ativo: boolean;
   empresaRepresentacaoId?: string; // Associated company
   senha?: string; // Password for non-admin users
+  permissoes?: UserPermissions;
 }
 
 // Representation Company / Entity (Razões Sociais da Representação)

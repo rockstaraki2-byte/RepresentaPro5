@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { EmpresaRepresentacao, Usuario, UserRole } from '../types';
+import { EmpresaRepresentacao, Usuario, UserRole, UserPermissions } from '../types';
 import { 
   Building2, 
   Users, 
@@ -16,9 +16,13 @@ import {
   User,
   Activity,
   Globe,
-  Briefcase
+  Briefcase,
+  ShieldCheck,
+  CheckSquare,
+  Square,
+  Sparkles
 } from 'lucide-react';
-import { formatarCNPJ, formatarTelefone } from '../utils';
+import { formatarCNPJ, formatarTelefone, getUserPermissions } from '../utils';
 
 interface AdminTabProps {
   empresas: EmpresaRepresentacao[];
@@ -228,20 +232,78 @@ export default function AdminTab({
   // --- Handlers for Usuario ---
   const handleAddEditUsuarioClick = (usr?: Usuario) => {
     if (usr) {
-      setUsuarioForm(usr);
+      setUsuarioForm({
+        ...usr,
+        permissoes: getUserPermissions(usr)
+      });
       setEditingUsuarioId(usr.id);
     } else {
+      const defaultRole: UserRole = 'Vendedor';
+      const defaultPerms = getUserPermissions({ role: defaultRole } as Usuario);
       setUsuarioForm({
         nome: '',
         email: '',
-        role: 'Administrador',
+        role: defaultRole,
         ativo: true,
         empresaRepresentacaoId: activeEmpresaId,
+        permissoes: defaultPerms
       });
       setEditingUsuarioId(null);
     }
     setValidationError(null);
     setShowUsuarioModal(true);
+  };
+
+  const applyPermissionPreset = (preset: 'vendedor_padrao' | 'vendedor_avancado' | 'representante_completo' | 'todos' | 'nenhum') => {
+    let perms: Required<UserPermissions>;
+    if (preset === 'todos') {
+      perms = {
+        verDashboard: true, verTodasVendas: true, verComissoes: true,
+        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: true,
+        verRepresentadas: true, verFinanceiro: true, criarPedidos: true, editarPedidos: true,
+        excluirPedidos: true, gerenciarUsuarios: true
+      };
+    } else if (preset === 'vendedor_padrao') {
+      perms = {
+        verDashboard: true, verTodasVendas: false, verComissoes: false,
+        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: false,
+        verRepresentadas: true, verFinanceiro: false, criarPedidos: true, editarPedidos: true,
+        excluirPedidos: false, gerenciarUsuarios: false
+      };
+    } else if (preset === 'vendedor_avancado') {
+      perms = {
+        verDashboard: true, verTodasVendas: true, verComissoes: true,
+        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: true,
+        verRepresentadas: true, verFinanceiro: false, criarPedidos: true, editarPedidos: true,
+        excluirPedidos: false, gerenciarUsuarios: false
+      };
+    } else if (preset === 'representante_completo') {
+      perms = {
+        verDashboard: true, verTodasVendas: true, verComissoes: true,
+        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: true,
+        verRepresentadas: true, verFinanceiro: true, criarPedidos: true, editarPedidos: true,
+        excluirPedidos: true, gerenciarUsuarios: false
+      };
+    } else {
+      perms = {
+        verDashboard: false, verTodasVendas: false, verComissoes: false,
+        verClientes: false, editarClientes: false, verProdutos: false, editarProdutos: false,
+        verRepresentadas: false, verFinanceiro: false, criarPedidos: false, editarPedidos: false,
+        excluirPedidos: false, gerenciarUsuarios: false
+      };
+    }
+    setUsuarioForm(prev => ({ ...prev, permissoes: perms }));
+  };
+
+  const togglePermission = (key: keyof UserPermissions) => {
+    const currentPerms = usuarioForm.permissoes || getUserPermissions(usuarioForm as Usuario);
+    setUsuarioForm(prev => ({
+      ...prev,
+      permissoes: {
+        ...currentPerms,
+        [key]: !currentPerms[key]
+      }
+    }));
   };
 
   const handleUsuarioSubmit = (e: React.FormEvent) => {
@@ -259,14 +321,17 @@ export default function AdminTab({
       return;
     }
 
+    const currentPerms = usuarioForm.permissoes || getUserPermissions(usuarioForm as Usuario);
+
     let finalUsr: Usuario = {
       id: editingUsuarioId || `usr-${Date.now()}`,
       nome: usuarioForm.nome.trim(),
       email: usuarioForm.email.trim(),
-      role: (usuarioForm.role as UserRole) || 'Administrador',
+      role: (usuarioForm.role as UserRole) || 'Vendedor',
       ativo: usuarioForm.ativo !== undefined ? usuarioForm.ativo : true,
       empresaRepresentacaoId: usuarioForm.empresaRepresentacaoId,
       senha: usuarioForm.role !== 'Administrador' ? usuarioForm.senha?.trim() : undefined,
+      permissoes: currentPerms
     };
 
     if (isEditingRaul) {
@@ -530,6 +595,29 @@ export default function AdminTab({
                           )}
                         </div>
                       </div>
+
+                      {/* Permissions Summary Badges */}
+                      {(() => {
+                        const userPerms = getUserPermissions(usr);
+                        const totalActive = Object.values(userPerms).filter(Boolean).length;
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500 flex flex-wrap items-center justify-between gap-1">
+                            <span className="font-mono text-slate-400">Permissões: <strong className="text-emerald-700">{totalActive}/13 ativas</strong></span>
+                            <div className="flex gap-1 flex-wrap">
+                              {userPerms.verTodasVendas ? (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-mono text-[9px] font-bold">Todas Vendas</span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[9px] font-bold">Próprias Vendas</span>
+                              )}
+                              {userPerms.verComissoes ? (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono text-[9px] font-bold">Comissões</span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-mono text-[9px] font-bold">Sem Comissões</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -991,7 +1079,7 @@ export default function AdminTab({
                   <div className="space-y-1">
                     <label className="block text-[10px] font-mono uppercase text-slate-500 font-bold">Senha de Acesso *</label>
                     <input
-                      type="text" // Use text or password, text is handier in management but password is safe. Let's use standard text with password feel or password with preview.
+                      type="text"
                       placeholder="Defina a senha de login (Mínimo 6 dígitos)"
                       value={usuarioForm.senha || ''}
                       onChange={(e) => setUsuarioForm({ ...usuarioForm, senha: e.target.value })}
@@ -1000,6 +1088,101 @@ export default function AdminTab({
                     <p className="text-[10px] text-slate-400">Usuários não-administradores farão login usando e-mail e esta senha.</p>
                   </div>
                 )}
+
+                {/* Seção de Permissões de Acesso Personalizadas */}
+                <div className="pt-3 border-t border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="font-serif font-bold text-xs text-slate-800">Permissões de Acesso do Usuário</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">Personalize o que este usuário pode ver ou fazer</span>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div className="flex flex-wrap gap-1.5 bg-slate-100/80 p-2 rounded-xl border border-slate-200">
+                    <span className="text-[10px] text-slate-500 font-bold self-center mr-1">Atalhos:</span>
+                    <button
+                      type="button"
+                      onClick={() => applyPermissionPreset('vendedor_padrao')}
+                      className="text-[10px] bg-white hover:bg-slate-50 text-slate-700 font-bold px-2 py-1 rounded border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      🎯 Vendedor Padrão
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPermissionPreset('vendedor_avancado')}
+                      className="text-[10px] bg-white hover:bg-slate-50 text-slate-700 font-bold px-2 py-1 rounded border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      🌟 Vendedor Completo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPermissionPreset('representante_completo')}
+                      className="text-[10px] bg-white hover:bg-slate-50 text-slate-700 font-bold px-2 py-1 rounded border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      💼 Representante
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPermissionPreset('todos')}
+                      className="text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded border border-emerald-200 transition-colors cursor-pointer"
+                    >
+                      ✅ Selecionar Todos
+                    </button>
+                  </div>
+
+                  {/* Checklist Grid */}
+                  {(() => {
+                    const perms = usuarioForm.permissoes || getUserPermissions(usuarioForm as Usuario);
+                    const permItems: { key: keyof UserPermissions; label: string; desc: string }[] = [
+                      { key: 'verDashboard', label: '📊 Painel Geral / Dashboard', desc: 'Acessar tela principal com gráficos e estatísticas' },
+                      { key: 'verTodasVendas', label: '🌐 Ver Vendas de Toda a Empresa', desc: 'Se desativado, o vendedor enxerga apenas seus próprios pedidos' },
+                      { key: 'verComissoes', label: '💰 Ver Valores e % de Comissões', desc: 'Exibir percentual e valor de comissão nos pedidos' },
+                      { key: 'criarPedidos', label: '🛒 Lançar / Criar Novos Pedidos', desc: 'Permissão para registrar novos pedidos de venda' },
+                      { key: 'editarPedidos', label: '✏️ Editar Pedidos Existentes', desc: 'Permissão para alterar produtos ou dados do pedido' },
+                      { key: 'excluirPedidos', label: '🗑️ Excluir Pedidos', desc: 'Permissão para apagar pedidos do sistema' },
+                      { key: 'verClientes', label: '👥 Carteira de Clientes', desc: 'Acessar a lista e consulta de clientes' },
+                      { key: 'editarClientes', label: '➕ Cadastrar / Editar Clientes', desc: 'Permissão para cadastrar e alterar clientes' },
+                      { key: 'verProdutos', label: '📦 Catálogo de Produtos', desc: 'Acessar a lista e preços dos produtos' },
+                      { key: 'editarProdutos', label: '✏️ Cadastrar / Editar Produtos', desc: 'Permissão para alterar catálogo de produtos' },
+                      { key: 'verRepresentadas', label: '🏭 Representadas / Fábricas', desc: 'Visualizar fornecedores e indústrias' },
+                      { key: 'verFinanceiro', label: '📈 Módulo Financeiro & Metas', desc: 'Acessar fluxo financeiro e metas mensais' },
+                      { key: 'gerenciarUsuarios', label: '🔑 Painel Admin & Usuários', desc: 'Cadastrar e alterar usuários no sistema' },
+                    ];
+
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50/50 p-2.5 rounded-xl border border-slate-200 max-h-64 overflow-y-auto">
+                        {permItems.map(item => {
+                          const isChecked = !!perms[item.key];
+                          return (
+                            <div
+                              key={item.key}
+                              onClick={() => togglePermission(item.key)}
+                              className={`flex items-start gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
+                                isChecked
+                                  ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 shadow-2xs'
+                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100/80'
+                              }`}
+                            >
+                              <div className="mt-0.5 shrink-0">
+                                {isChecked ? (
+                                  <CheckSquare className="w-4 h-4 text-emerald-600" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-300" />
+                                )}
+                              </div>
+                              <div className="space-y-0.5">
+                                <span className="block text-xs font-bold leading-tight">{item.label}</span>
+                                <span className="block text-[10px] text-slate-500 leading-tight">{item.desc}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
               </form>
             </div>
 

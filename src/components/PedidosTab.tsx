@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Pedido, Cliente, Representada, OrderItem, PedidoStatus, Produto } from '../types';
 import { formatarMoeda, formatarData, calcularParcelas } from '../utils';
-import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles, Calendar } from 'lucide-react';
+import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles, Calendar, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { gerarPedidoPDF, gerarResumoMensalPDF, gerarResumoPeriodoPDF } from '../lib/pdfGenerator';
 import CatalogViewerModal from './CatalogViewerModal';
@@ -161,8 +161,17 @@ export default function PedidosTab({
   const [observacoes, setObservacoes] = useState('');
   const [condicoesPagamento, setCondicoesPagamento] = useState('');
 
+  // Billing & Freight form states
+  const [tipoFaturamento, setTipoFaturamento] = useState<'Nota Fiscal' | 'Notinha'>('Nota Fiscal');
+  const [opcaoFrete, setOpcaoFrete] = useState<'percentual' | 'fixo' | 'manual' | 'nenhum'>('nenhum');
+  const [tipoFrete, setTipoFrete] = useState<'FOB' | 'CIF' | 'Sem Frete'>('FOB');
+  const [percentualFrete, setPercentualFrete] = useState<number | ''>('');
+  const [valorFreteInput, setValorFreteInput] = useState<number | ''>('');
+  const [freteSomarNoTotal, setFreteSomarNoTotal] = useState<boolean>(true);
+
   // Item form states
   const [selectedProdutoId, setSelectedProdutoId] = useState('');
+  const [itemCodigo, setItemCodigo] = useState('');
   const [itemDescricao, setItemDescricao] = useState('');
   const [itemCor, setItemCor] = useState('');
   const [itemVariacao, setItemVariacao] = useState('');
@@ -300,27 +309,24 @@ export default function PedidosTab({
     
     const year = dataPedido ? dataPedido.split('-')[0] : new Date().getFullYear().toString();
     
-    // Find highest sequence among ALL orders for this client & year
+    // Find highest sequence among ALL orders in the system across ALL clients
     let maxSeq = 0;
     pedidos.forEach(p => {
-      const match = p.numeroPedido.match(/^PED-(.+)-(\d+)-(\d{4})$/i);
+      if (!p.numeroPedido) return;
+      // Match pattern like PED-CLIENTE-001 or PED-CLIENTE-0001-2026 or PED-001
+      const match = p.numeroPedido.match(/PED-(?:.+?-)?(\d+)(?:-\d{4})?$/i);
       if (match) {
-        const pAbr = match[1].toUpperCase();
-        const pSeq = parseInt(match[2], 10);
-        const pYear = match[3];
-        
-        if (pAbr === abr && pYear === year) {
-          if (pSeq > maxSeq) {
-            maxSeq = pSeq;
-          }
+        const pSeq = parseInt(match[1], 10);
+        if (!isNaN(pSeq) && pSeq > maxSeq && pSeq < 100000) {
+          maxSeq = pSeq;
         }
-      } else if (p.clienteId === clienteId) {
-        // Fallback: if it's the same client, try to parse any digits
+      } else {
+        // Fallback for custom or legacy order numbers
         const digits = p.numeroPedido.match(/(\d+)/g);
         if (digits) {
           digits.forEach(dStr => {
             const val = parseInt(dStr, 10);
-            if (val > maxSeq && val < 9000 && dStr !== year) {
+            if (!isNaN(val) && val > maxSeq && val < 90000 && dStr !== year) {
               maxSeq = val;
             }
           });
@@ -329,9 +335,9 @@ export default function PedidosTab({
     });
     
     const nextSeq = maxSeq + 1;
-    const seqStr = String(nextSeq).padStart(4, '0');
+    const seqStr = String(nextSeq).padStart(3, '0');
     
-    setNumeroPedido(`PED-${abr}-${seqStr}-${year}`);
+    setNumeroPedido(`PED-${abr}-${seqStr}`);
   };
 
   // Automatically trigger code generation for new orders if client is selected and number is empty or formatted
@@ -341,13 +347,42 @@ export default function PedidosTab({
     }
   }, [clienteId, dataPedido, editingId]);
 
-  // Sync default commission % when represented company is selected (only when creating)
+  // Auto sync default client billing option (Nota Fiscal vs Notinha) when customer is selected
+  const handleClienteChange = (id: string) => {
+    setClienteId(id);
+    if (!editingId) {
+      const cliSelected = clientes.find(c => c.id === id);
+      if (cliSelected?.tipoFaturamento) {
+        setTipoFaturamento(cliSelected.tipoFaturamento);
+      } else {
+        setTipoFaturamento('Nota Fiscal');
+      }
+    }
+  };
+
+  // Sync default commission % and default freight rule when represented company is selected (only when creating)
   const handleRepresentadaChange = (id: string) => {
     setRepresentadaId(id);
     if (!editingId) {
       const repSelected = representadas.find(r => r.id === id);
       if (repSelected) {
         setComissaoPercentual(repSelected.comissaoPadrao);
+        if (repSelected.fretePadraoTipo) {
+          setOpcaoFrete(repSelected.fretePadraoTipo);
+          if (repSelected.fretePadraoTipo === 'percentual') {
+            setPercentualFrete(repSelected.fretePadraoValor || '');
+            setValorFreteInput('');
+          } else if (repSelected.fretePadraoTipo === 'fixo' || repSelected.fretePadraoTipo === 'manual') {
+            setValorFreteInput(repSelected.fretePadraoValor || '');
+            setPercentualFrete('');
+          } else {
+            setPercentualFrete('');
+            setValorFreteInput('');
+          }
+          if (repSelected.freteModalidadePadrao) {
+            setTipoFrete(repSelected.freteModalidadePadrao);
+          }
+        }
       }
     }
   };
@@ -371,6 +406,7 @@ export default function PedidosTab({
     if (editingItemId) {
       setItens(itens.map(it => it.id === editingItemId ? {
         ...it,
+        codigo: itemCodigo.trim() || undefined,
         descricao: itemDescricao.trim(),
         cor: itemCor.trim() || undefined,
         variacao: itemVariacao.trim() || undefined,
@@ -381,6 +417,7 @@ export default function PedidosTab({
     } else {
       const novoItem: OrderItem = {
         id: `item-${Date.now()}-${Math.random().toString(36).substring(5)}`,
+        codigo: itemCodigo.trim() || undefined,
         descricao: itemDescricao.trim(),
         cor: itemCor.trim() || undefined,
         variacao: itemVariacao.trim() || undefined,
@@ -392,6 +429,7 @@ export default function PedidosTab({
     }
 
     setSelectedProdutoId('');
+    setItemCodigo('');
     setItemDescricao('');
     setItemCor('');
     setItemVariacao('');
@@ -402,6 +440,7 @@ export default function PedidosTab({
 
   const handleEditItemInit = (item: OrderItem) => {
     setEditingItemId(item.id);
+    setItemCodigo(item.codigo || '');
     setItemDescricao(item.descricao);
     setItemCor(item.cor || '');
     setItemVariacao(item.variacao || '');
@@ -425,7 +464,18 @@ export default function PedidosTab({
     setObservacoes('');
     setCondicoesPagamento('');
     setSelectedProdutoId('');
+    setItemCodigo('');
+    setItemDescricao('');
+    setItemCor('');
+    setItemVariacao('');
     setItemQuantidade('');
+    setItemPreco(0);
+    setTipoFaturamento('Nota Fiscal');
+    setOpcaoFrete('nenhum');
+    setTipoFrete('FOB');
+    setPercentualFrete('');
+    setValorFreteInput('');
+    setFreteSomarNoTotal(true);
     setValidationError(null);
     setIsFormOpen(false);
   };
@@ -441,26 +491,57 @@ export default function PedidosTab({
     setStatus(p.status);
     setObservacoes(p.observacoes || '');
     setCondicoesPagamento(p.condicoesPagamento || '');
+    const cliOfOrder = clientes.find(c => c.id === p.clienteId);
+    setTipoFaturamento(p.tipoFaturamento || cliOfOrder?.tipoFaturamento || 'Nota Fiscal');
+    setOpcaoFrete(p.opcaoFrete || 'nenhum');
+    setTipoFrete(p.tipoFrete || 'FOB');
+    setPercentualFrete(p.percentualFrete !== undefined ? p.percentualFrete : '');
+    setValorFreteInput(p.valorFrete !== undefined ? p.valorFrete : '');
+    setFreteSomarNoTotal(p.freteSomarNoTotal !== undefined ? p.freteSomarNoTotal : true);
     setValidationError(null);
     setIsFormOpen(true);
+  };
+
+  const buildOrderCopyItemsText = (items: OrderItem[]) => {
+    return items.map(it => {
+      let line = '- ';
+      if (it.codigo) {
+        line += `[${it.codigo}] `;
+      }
+      line += `${it.descricao}`;
+      if (it.cor) {
+        line += ` | Cor: ${it.cor}`;
+      }
+      if (it.variacao) {
+        line += ` | Var: ${it.variacao}`;
+      }
+      line += `: ${it.quantidade}x ${formatarMoeda(it.precoUnitario)} = ${formatarMoeda(it.totalItem)}`;
+      return line;
+    }).join('\n');
+  };
+
+  const getOrderFreightText = (p: Pedido) => {
+    if (p.opcaoFrete && p.opcaoFrete !== 'nenhum') {
+      const val = p.valorFrete ? formatarMoeda(p.valorFrete) : 'R$ 0,00';
+      const mod = p.tipoFrete || 'FOB';
+      return `${mod} (${val})`;
+    }
+    return 'Sem Frete / Retirada';
   };
 
   const handleOpenEmailModal = (p: Pedido) => {
     const cli = clientes.find(c => c.id === p.clienteId);
     const rep = representadas.find(r => r.id === p.representadaId);
     
-    const itemsList = p.itens.map(it => {
-      let desc = `- ${it.descricao}: ${it.quantidade}x ${formatarMoeda(it.precoUnitario)}`;
-      if (it.cor) desc += ` | Cor: ${it.cor}`;
-      if (it.variacao) desc += ` | Var: ${it.variacao}`;
-      return desc;
-    }).join('\n');
+    const itemsList = buildOrderCopyItemsText(p.itens);
+    const fatType = p.tipoFaturamento || cli?.tipoFaturamento || 'Nota Fiscal';
+    const freteTxt = getOrderFreightText(p);
     
     setEmailPedido(p);
     setRecipientType('cliente');
     setEmailRecipient(cli?.email || '');
     setEmailSubject(`Pedido de Venda #${p.numeroPedido} - ${rep?.nomeFantasia || 'Representada'}`);
-    setEmailBody(`Prezado(a) ${cli?.contato || 'Cliente'},\n\nSegue em anexo a cópia digital do Pedido de Venda #${p.numeroPedido}.\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nValor Total: ${formatarMoeda(p.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
+    setEmailBody(`Prezado(a) ${cli?.contato || 'Cliente'},\n\nSegue a cópia digital do Pedido de Venda #${p.numeroPedido}.\n\nTipo de Faturamento: ${fatType === 'Notinha' ? 'Notinha (Sem NF)' : 'Nota Fiscal'}\nFrete: ${freteTxt}\nStatus: ${p.status}\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nSubtotal Produtos: ${formatarMoeda(p.valorSubtotal || p.valorTotal)}\nValor Total: ${formatarMoeda(p.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
     setEmailSuccess(false);
   };
 
@@ -481,12 +562,9 @@ export default function PedidosTab({
     }
     setEmailRecipient(email);
 
-    const itemsList = emailPedido.itens.map(it => {
-      let desc = `- ${it.descricao}: ${it.quantidade}x ${formatarMoeda(it.precoUnitario)}`;
-      if (it.cor) desc += ` | Cor: ${it.cor}`;
-      if (it.variacao) desc += ` | Var: ${it.variacao}`;
-      return desc;
-    }).join('\n');
+    const itemsList = buildOrderCopyItemsText(emailPedido.itens);
+    const fatType = emailPedido.tipoFaturamento || cli?.tipoFaturamento || 'Nota Fiscal';
+    const freteTxt = getOrderFreightText(emailPedido);
 
     let greeting = 'Prezado(a) Cliente';
     if (type === 'fornecedor') {
@@ -497,7 +575,7 @@ export default function PedidosTab({
       greeting = `Prezado(a) ${cli?.contato || 'Cliente'}`;
     }
 
-    setEmailBody(`${greeting},\n\nSegue em anexo a cópia digital do Pedido de Venda #${emailPedido.numeroPedido}.\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nValor Total: ${formatarMoeda(emailPedido.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
+    setEmailBody(`${greeting},\n\nSegue a cópia digital do Pedido de Venda #${emailPedido.numeroPedido}.\n\nTipo de Faturamento: ${fatType === 'Notinha' ? 'Notinha (Sem NF)' : 'Nota Fiscal'}\nFrete: ${freteTxt}\nStatus: ${emailPedido.status}\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nSubtotal Produtos: ${formatarMoeda(emailPedido.valorSubtotal || emailPedido.valorTotal)}\nValor Total: ${formatarMoeda(emailPedido.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
   };
 
   const handleSendWhatsApp = (p: Pedido) => {
@@ -506,15 +584,12 @@ export default function PedidosTab({
     
     const formattedDate = formatarData(p.dataPedido);
     const totalVal = formatarMoeda(p.valorTotal);
+    const fatType = p.tipoFaturamento || cli?.tipoFaturamento || 'Nota Fiscal';
+    const freteTxt = getOrderFreightText(p);
     
-    const itemsList = p.itens.map(it => {
-      let desc = `- ${it.descricao}: ${it.quantidade}x ${formatarMoeda(it.precoUnitario)}`;
-      if (it.cor) desc += ` | Cor: ${it.cor}`;
-      if (it.variacao) desc += ` | Var: ${it.variacao}`;
-      return desc;
-    }).join('\n');
+    const itemsList = buildOrderCopyItemsText(p.itens);
     
-    const text = `Olá, *${cli?.contato || 'Cliente'}*!\n\nSegue o resumo do seu *Pedido #${p.numeroPedido}* em parceria com a fábrica *${rep?.nomeFantasia || 'Representada'}*:\n\n*Data do Pedido:* ${formattedDate}\n*Status:* ${p.status}\n\n*Itens do Pedido:*\n${itemsList}\n\n*Valor Total do Pedido:* *${totalVal}*\n\nSe tiver qualquer dúvida, estou à disposição.\nAtenciosamente,\nRepresentação Comercial`;
+    const text = `Olá, *${cli?.contato || 'Cliente'}*!\n\nSegue a cópia do seu *Pedido #${p.numeroPedido}* em parceria com a fábrica *${rep?.nomeFantasia || 'Representada'}*:\n\n*Data do Pedido:* ${formattedDate}\n*Tipo de Faturamento:* ${fatType === 'Notinha' ? 'Notinha (Sem NF)' : 'Nota Fiscal'}\n*Frete:* ${freteTxt}\n*Status:* ${p.status}\n\n*Itens do Pedido:*\n${itemsList}\n\n*Valor Total do Pedido:* *${totalVal}*\n\nSe tiver qualquer dúvida, estou à disposição.\nAtenciosamente,\nRepresentação Comercial`;
     
     const firstPhone = cli?.telefone ? cli.telefone.split('/')[0].split('|')[0] : '';
     const phone = firstPhone.replace(/\D/g, '');
@@ -610,8 +685,19 @@ export default function PedidosTab({
       return;
     }
 
-    const totalPedido = itens.reduce((sum, item) => sum + item.totalItem, 0);
+    const subtotal = itens.reduce((sum, item) => sum + item.totalItem, 0);
     
+    // Calculate Freight
+    let vFrete = 0;
+    if (opcaoFrete === 'percentual') {
+      const pFrete = typeof percentualFrete === 'number' ? percentualFrete : parseFloat(String(percentualFrete)) || 0;
+      vFrete = (subtotal * pFrete) / 100;
+    } else if (opcaoFrete === 'fixo' || opcaoFrete === 'manual') {
+      vFrete = typeof valorFreteInput === 'number' ? valorFreteInput : parseFloat(String(valorFreteInput)) || 0;
+    }
+
+    const totalFinal = (freteSomarNoTotal && opcaoFrete !== 'nenhum') ? subtotal + vFrete : subtotal;
+
     // For non-admins, ensure the commission is exactly the default of the represented company
     let percComissao = parseFloat(String(comissaoPercentual));
     if (currentUser?.role !== 'Administrador') {
@@ -626,7 +712,8 @@ export default function PedidosTab({
       return;
     }
 
-    const valorComissaoCalculado = totalPedido * (percComissao / 100);
+    // Commission calculated on product subtotal, avoiding taxing commission on freight
+    const valorComissaoCalculado = subtotal * (percComissao / 100);
 
     const finalPedido: Pedido = {
       id: editingId || `ped-${Date.now()}`,
@@ -635,7 +722,14 @@ export default function PedidosTab({
       representadaId,
       dataPedido,
       itens,
-      valorTotal: totalPedido,
+      valorSubtotal: subtotal,
+      tipoFaturamento,
+      opcaoFrete,
+      tipoFrete,
+      valorFrete: vFrete,
+      percentualFrete: typeof percentualFrete === 'number' ? percentualFrete : parseFloat(String(percentualFrete)) || undefined,
+      freteSomarNoTotal,
+      valorTotal: totalFinal,
       comissaoPercentual: percComissao,
       valorComissao: valorComissaoCalculado,
       status,
@@ -719,8 +813,33 @@ export default function PedidosTab({
     return matchesSearch && matchesStatus && matchesDataDe && matchesDataAte && matchesRepresentada;
   });
 
-  const totalCalculadoForm = itens.reduce((sum, item) => sum + item.totalItem, 0);
-  const valorComissaoForm = totalCalculadoForm * (comissaoPercentual / 100);
+  const subtotalProdutosForm = useMemo(() => {
+    return itens.reduce((sum, item) => sum + item.totalItem, 0);
+  }, [itens]);
+
+  const valorFreteCalculadoForm = useMemo(() => {
+    if (opcaoFrete === 'percentual') {
+      const perc = typeof percentualFrete === 'number' ? percentualFrete : parseFloat(String(percentualFrete)) || 0;
+      return (subtotalProdutosForm * perc) / 100;
+    }
+    if (opcaoFrete === 'fixo' || opcaoFrete === 'manual') {
+      return typeof valorFreteInput === 'number' ? valorFreteInput : parseFloat(String(valorFreteInput)) || 0;
+    }
+    return 0;
+  }, [subtotalProdutosForm, opcaoFrete, percentualFrete, valorFreteInput]);
+
+  const totalCalculadoForm = useMemo(() => {
+    if (freteSomarNoTotal && opcaoFrete !== 'nenhum') {
+      return subtotalProdutosForm + valorFreteCalculadoForm;
+    }
+    return subtotalProdutosForm;
+  }, [subtotalProdutosForm, valorFreteCalculadoForm, freteSomarNoTotal, opcaoFrete]);
+
+  const valorComissaoForm = useMemo(() => {
+    let perc = parseFloat(String(comissaoPercentual));
+    if (isNaN(perc)) perc = 0;
+    return subtotalProdutosForm * (perc / 100);
+  }, [subtotalProdutosForm, comissaoPercentual]);
   const produtosFiltradosRepresentada = produtos ? produtos.filter(p => p.representadaId === representadaId && p.ativo) : [];
 
   return (
@@ -825,10 +944,10 @@ export default function PedidosTab({
                           options={clientes.map(c => ({
                             id: c.id,
                             label: c.nomeFantasia,
-                            sublabel: `CNPJ: ${c.cnpj} | ${c.cidade}-${c.uf}`
+                            sublabel: `CNPJ: ${c.cnpj} | ${c.cidade}-${c.uf} | ${c.tipoFaturamento === 'Notinha' ? '📝 Notinha' : '📄 NF'}`
                           }))}
                           value={clienteId}
-                          onChange={(id) => setClienteId(id)}
+                          onChange={(id) => handleClienteChange(id)}
                           placeholder="Buscar cliente por nome ou CNPJ..."
                         />
                         {selectedClienteInfo?.isOverdue && (
@@ -842,6 +961,21 @@ export default function PedidosTab({
                             </div>
                           </div>
                         )}
+                      </div>
+
+                      {/* Tipo de Faturamento */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-mono uppercase text-slate-500 font-bold text-slate-700">
+                          Tipo de Faturamento <span className="text-red-500">*</span>
+                        </label>
+                        <select 
+                          value={tipoFaturamento}
+                          onChange={(e) => setTipoFaturamento(e.target.value as any)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-bold cursor-pointer"
+                        >
+                          <option value="Nota Fiscal">📄 Nota Fiscal (Com NF)</option>
+                          <option value="Notinha">📝 Notinha (Sem NF / Venda Direta)</option>
+                        </select>
                       </div>
 
                       {/* Representada */}
@@ -940,6 +1074,137 @@ export default function PedidosTab({
                       />
                     </div>
 
+                    {/* Opções de Frete */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label className="text-xs font-mono uppercase text-slate-700 font-bold flex items-center gap-1.5">
+                          <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Opções de Frete do Pedido</span>
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-mono text-slate-400">Modalidade:</span>
+                          <select
+                            value={tipoFrete}
+                            onChange={(e) => setTipoFrete(e.target.value as any)}
+                            className="bg-white border border-slate-200 rounded px-2 py-0.5 text-[11px] font-bold text-slate-700 focus:outline-none focus:border-emerald-600 cursor-pointer"
+                          >
+                            <option value="FOB">FOB (Comprador/Destinatário)</option>
+                            <option value="CIF">CIF (Emitente/Fábrica)</option>
+                            <option value="Sem Frete">Sem Frete / Retirada</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Opção / Tipo de Cálculo */}
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-mono uppercase text-slate-500">Regra de Cálculo</label>
+                          <select
+                            value={opcaoFrete}
+                            onChange={(e) => {
+                              const val = e.target.value as any;
+                              setOpcaoFrete(val);
+                              if (val === 'fixo' && (valorFreteInput === '' || valorFreteInput === 0)) {
+                                const rep = representadas.find(r => r.id === representadaId);
+                                if (rep?.fretePadraoValor) {
+                                  setValorFreteInput(rep.fretePadraoValor);
+                                }
+                              } else if (val === 'percentual' && (percentualFrete === '' || percentualFrete === 0)) {
+                                const rep = representadas.find(r => r.id === representadaId);
+                                if (rep?.fretePadraoValor) {
+                                  setPercentualFrete(rep.fretePadraoValor);
+                                }
+                              }
+                            }}
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 text-slate-800 font-bold cursor-pointer"
+                          >
+                            <option value="nenhum">Sem Frete / Não Informado</option>
+                            <option value="percentual">% do valor do pedido</option>
+                            <option value="fixo">Frete Fixo da Fábrica (R$)</option>
+                            <option value="manual">Digitar um valor de frete (R$)</option>
+                          </select>
+                        </div>
+
+                        {/* Input de Valor Dinâmico */}
+                        {opcaoFrete === 'percentual' && (
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-mono uppercase text-slate-500">Porcentagem do Frete (%)</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                max="100"
+                                placeholder="Ex: 3.5 (%)"
+                                value={percentualFrete}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setPercentualFrete(val === '' ? '' : parseFloat(val) || 0);
+                                }}
+                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 text-slate-800 font-mono font-bold"
+                              />
+                              <div className="text-[11px] font-mono text-emerald-700 font-bold shrink-0 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
+                                = {formatarMoeda(valorFreteCalculadoForm)}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {opcaoFrete === 'fixo' && (
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-mono uppercase text-slate-500">Valor Frete Fixo (R$)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              placeholder="Ex: 150.00"
+                              value={valorFreteInput}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setValorFreteInput(val === '' ? '' : parseFloat(val) || 0);
+                              }}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 text-slate-800 font-mono font-bold"
+                            />
+                          </div>
+                        )}
+
+                        {opcaoFrete === 'manual' && (
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-mono uppercase text-slate-500">Digitar Valor do Frete (R$)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              placeholder="Digite o valor ex: 120.50"
+                              value={valorFreteInput}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setValorFreteInput(val === '' ? '' : parseFloat(val) || 0);
+                              }}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 text-slate-800 font-mono font-bold"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {opcaoFrete !== 'nenhum' && (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pt-1.5 border-t border-slate-200/60">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 font-medium">
+                            <input
+                              type="checkbox"
+                              checked={freteSomarNoTotal}
+                              onChange={(e) => setFreteSomarNoTotal(e.target.checked)}
+                              className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <span>Somar frete ({formatarMoeda(valorFreteCalculadoForm)}) ao valor total do pedido</span>
+                          </label>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {tipoFrete === 'CIF' ? 'CIF: Incluso' : 'FOB: Cobrado à parte'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Tabela de Itens Adicionados */}
                     <div className="space-y-1.5 pt-2">
                       <span className="block text-xs font-mono uppercase text-slate-500">Produtos no Pedido ({itens.length})</span>
@@ -960,18 +1225,29 @@ export default function PedidosTab({
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {itens.map(it => (
-                                  <tr key={it.id} className="hover:bg-slate-50/60 transition-colors">
-                                    <td className="p-2.5 pl-3">
-                                      <div className="font-serif text-slate-700 font-bold">{it.descricao}</div>
-                                      {(it.cor || it.variacao) && (
-                                        <div className="flex gap-1.5 mt-0.5 text-[9px] font-mono text-slate-500">
-                                          {it.cor && <span>Cor: {it.cor}</span>}
-                                          {it.variacao && <span>Var: {it.variacao}</span>}
-                                        </div>
+                              {itens.map(it => (
+                                <tr key={it.id} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="p-2.5 pl-3">
+                                    <div className="font-serif text-slate-700 font-bold flex items-center gap-1.5 flex-wrap">
+                                      {it.codigo && (
+                                        <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                                          [{it.codigo}]
+                                        </span>
                                       )}
-                                    </td>
-                                    <td className="p-2.5 text-center font-mono font-bold text-slate-600">{it.quantidade}</td>
+                                      <span>{it.descricao}</span>
+                                      {it.cor && (
+                                        <span className="font-mono text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 font-bold">
+                                          Cor: {it.cor}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {it.variacao && (
+                                      <div className="text-[9px] font-mono text-slate-500 mt-0.5">
+                                        Var: {it.variacao}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="p-2.5 text-center font-mono font-bold text-slate-600">{it.quantidade}</td>
                                     <td className="p-2.5 text-right font-mono text-slate-600">{formatarMoeda(it.precoUnitario)}</td>
                                     <td className="p-2.5 text-right font-mono text-slate-700 font-bold">{formatarMoeda(it.totalItem)}</td>
                                     <td className="p-2.5 text-center">
@@ -1044,6 +1320,7 @@ export default function PedidosTab({
                               setSelectedProdutoId(id);
                               const prod = produtos.find(p => p.id === id);
                               if (prod) {
+                                setItemCodigo(prod.codigo || '');
                                 setItemDescricao(prod.nome);
                                 setItemPreco(prod.precoVenda);
                                 setItemCor(prod.cor || '');
@@ -1070,14 +1347,18 @@ export default function PedidosTab({
                                   onClick={() => {
                                     if (rec.produtoId) {
                                       setSelectedProdutoId(rec.produtoId);
+                                      const fp = produtos.find(p => p.id === rec.produtoId);
+                                      if (fp) setItemCodigo(fp.codigo || '');
                                     } else {
                                       const foundProd = produtos.find(
                                         p => p.nome.toLowerCase() === rec.descricao.toLowerCase() && p.representadaId === representadaId
                                       );
                                       if (foundProd) {
                                         setSelectedProdutoId(foundProd.id);
+                                        setItemCodigo(foundProd.codigo || '');
                                       } else {
                                         setSelectedProdutoId('');
+                                        setItemCodigo('');
                                       }
                                     }
                                     setItemDescricao(rec.descricao);
@@ -1101,21 +1382,32 @@ export default function PedidosTab({
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="space-y-1 sm:col-span-1">
+                            <label className="block text-[10px] font-mono uppercase text-slate-500">Cód. Produto</label>
+                            <input 
+                              type="text"
+                              placeholder="Ex: PROD-101"
+                              value={itemCodigo}
+                              onChange={(e) => setItemCodigo(e.target.value)}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 font-mono font-bold text-slate-800"
+                            />
+                          </div>
+
+                          <div className="space-y-1 sm:col-span-1">
                             <label className="block text-[10px] font-mono uppercase text-slate-500">Cor</label>
                             <input 
                               type="text"
-                              placeholder="Opcional"
+                              placeholder="Ex: Azul"
                               value={itemCor}
                               onChange={(e) => setItemCor(e.target.value)}
                               className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 font-mono"
                             />
                           </div>
                           
-                          <div className="space-y-1 sm:col-span-2">
-                            <label className="block text-[10px] font-mono uppercase text-slate-500">Variação / Tamanho</label>
+                          <div className="space-y-1 sm:col-span-1">
+                            <label className="block text-[10px] font-mono uppercase text-slate-500">Variação / Tam</label>
                             <input 
                               type="text"
-                              placeholder="Opcional"
+                              placeholder="Ex: G / Tam 42"
                               value={itemVariacao}
                               onChange={(e) => setItemVariacao(e.target.value)}
                               className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 font-mono"
@@ -1176,10 +1468,16 @@ export default function PedidosTab({
                     <div className="mt-5 pt-4 border-t border-slate-200 space-y-2 text-xs font-mono">
                       <div className="flex justify-between text-slate-500">
                         <span>Subtotal Produtos:</span>
-                        <span className="text-slate-800 font-bold">{formatarMoeda(totalCalculadoForm)}</span>
+                        <span className="text-slate-800 font-bold">{formatarMoeda(subtotalProdutosForm)}</span>
                       </div>
+                      {opcaoFrete !== 'nenhum' && valorFreteCalculadoForm > 0 && (
+                        <div className="flex justify-between text-slate-500">
+                          <span>Frete ({tipoFrete}{freteSomarNoTotal ? ' - Somado' : ' - À parte'}):</span>
+                          <span className="text-slate-800 font-bold">{formatarMoeda(valorFreteCalculadoForm)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-slate-500 border-b border-dashed border-slate-200 pb-2">
-                        <span>Comissão ({comissaoPercentual}%):</span>
+                        <span>Comissão ({comissaoPercentual}% s/ prod):</span>
                         <span className="text-emerald-700 font-bold">{formatarMoeda(valorComissaoForm)}</span>
                       </div>
                       <div className="flex justify-between text-slate-700">
@@ -1433,6 +1731,18 @@ export default function PedidosTab({
                       <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${badgeColor}`}>
                         {p.status}
                       </span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                        (p.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-blue-50 text-blue-800 border-blue-200'
+                      }`}>
+                        {(p.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha' ? '📝 Notinha' : '📄 NF'}
+                      </span>
+                      {p.opcaoFrete && p.opcaoFrete !== 'nenhum' && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border bg-slate-50 text-slate-700 border-slate-200">
+                          🚚 {p.tipoFrete || 'FOB'}
+                        </span>
+                      )}
                       
                       <div className="flex items-center gap-1 ml-2">
                         <button 
@@ -1503,14 +1813,27 @@ export default function PedidosTab({
                       <span className="text-slate-400 block mt-0.5 text-[10px]">{rep ? rep.razaoSocial : ''}</span>
                     </div>
 
-                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex items-center justify-between">
-                      <div className="font-mono text-[10px]">
-                        <span className="text-slate-400 block uppercase tracking-wider">Valor do Pedido</span>
-                        <strong className="text-slate-800 text-xs font-bold">{formatarMoeda(p.valorTotal)}</strong>
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex flex-col justify-between gap-1">
+                      <div className="flex justify-between font-mono text-[10px]">
+                        <span className="text-slate-400 uppercase tracking-wider">Produtos:</span>
+                        <span className="text-slate-700 font-bold">{formatarMoeda(p.valorSubtotal || (p.valorFrete ? p.valorTotal - p.valorFrete : p.valorTotal))}</span>
                       </div>
-                      <div className="text-right font-mono text-[10px]">
-                        <span className="text-slate-400 block uppercase tracking-wider">Sua Comissão ({p.comissaoPercentual}%)</span>
-                        <strong className="text-emerald-700 text-xs font-extrabold">{formatarMoeda(p.valorComissao)}</strong>
+                      {Boolean(p.valorFrete && p.valorFrete > 0) && (
+                        <div className="flex justify-between font-mono text-[10px]">
+                          <span className="text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                            <Truck className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>Frete ({p.tipoFrete || 'FOB'}):</span>
+                          </span>
+                          <span className="text-slate-700 font-bold">{formatarMoeda(p.valorFrete || 0)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center font-mono text-[10px] pt-1 border-t border-slate-200/60">
+                        <span className="text-slate-600 font-bold uppercase tracking-wider">Total Pedido:</span>
+                        <strong className="text-slate-900 text-xs font-extrabold">{formatarMoeda(p.valorTotal)}</strong>
+                      </div>
+                      <div className="flex justify-between items-center font-mono text-[9px]">
+                        <span className="text-emerald-700">Sua Comissão ({p.comissaoPercentual}%):</span>
+                        <strong className="text-emerald-700 font-bold">{formatarMoeda(p.valorComissao)}</strong>
                       </div>
                     </div>
                   </div>
@@ -1842,8 +2165,16 @@ export default function PedidosTab({
                         PEDIDO DE VENDA: #{printPedido.numeroPedido}
                       </h3>
                     </div>
-                    <div className="text-left sm:text-right font-mono text-xs">
+                    <div className="text-left sm:text-right font-mono text-xs space-y-0.5">
                       <p className="text-slate-500">Emissão: <strong className="text-slate-800">{formatarData(printPedido.dataPedido)}</strong></p>
+                      <p className="text-slate-500">Faturamento: <strong className="text-slate-800">{(printPedido.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha' ? '📝 Notinha (Sem NF)' : '📄 Nota Fiscal'}</strong></p>
+                      <p className="text-slate-500">
+                        Frete: <strong className="text-slate-800">
+                          {printPedido.opcaoFrete && printPedido.opcaoFrete !== 'nenhum' 
+                            ? `${printPedido.tipoFrete || 'FOB'} (${printPedido.valorFrete ? formatarMoeda(printPedido.valorFrete) : 'R$ 0,00'})`
+                            : 'Sem Frete'}
+                        </strong>
+                      </p>
                       <p className="text-slate-500 mt-0.5">Status: <span className="font-bold text-emerald-700">{printPedido.status.toUpperCase()}</span></p>
                     </div>
                   </div>
@@ -1903,7 +2234,21 @@ export default function PedidosTab({
                         <tbody className="divide-y divide-slate-100">
                           {printPedido.itens.map((it, idx) => (
                             <tr key={it.id} className={idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}>
-                              <td className="py-3 px-4 font-serif font-bold text-slate-800">{it.descricao}</td>
+                              <td className="py-3 px-4 font-serif font-bold text-slate-800">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {it.codigo && (
+                                    <span className="font-mono text-xs text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                      [{it.codigo}]
+                                    </span>
+                                  )}
+                                  <span>{it.descricao}</span>
+                                  {it.cor && (
+                                    <span className="font-mono text-[11px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                      Cor: {it.cor}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
                               <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
                                 {[it.cor ? `Cor: ${it.cor}` : '', it.variacao ? `Var: ${it.variacao}` : ''].filter(Boolean).join(' | ') || '-'}
                               </td>
@@ -1958,9 +2303,15 @@ export default function PedidosTab({
 
                     <div className="bg-slate-900 text-white rounded-xl p-4 min-w-[280px] space-y-1.5 font-mono text-xs ml-auto">
                       <div className="flex justify-between text-slate-400 border-b border-dashed border-slate-700 pb-1.5">
-                        <span>VALOR TOTAL PRODUTOS:</span>
-                        <span className="font-bold text-white">{formatarMoeda(printPedido.valorTotal)}</span>
+                        <span>SUBTOTAL PRODUTOS:</span>
+                        <span className="font-bold text-white">{formatarMoeda(printPedido.valorSubtotal || (printPedido.valorFrete ? printPedido.valorTotal - printPedido.valorFrete : printPedido.valorTotal))}</span>
                       </div>
+                      {Boolean(printPedido.valorFrete && printPedido.valorFrete > 0) && (
+                        <div className="flex justify-between text-slate-300 border-b border-dashed border-slate-700 pb-1.5">
+                          <span>FRETE ({printPedido.tipoFrete || 'FOB'}):</span>
+                          <span className="font-bold text-emerald-400">{formatarMoeda(printPedido.valorFrete || 0)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-sm pt-0.5">
                         <span className="font-bold">TOTAL FATURADO:</span>
                         <span className="font-extrabold text-white text-base">{formatarMoeda(printPedido.valorTotal)}</span>

@@ -1,3 +1,46 @@
+import { Usuario, UserPermissions } from './types';
+
+export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
+  const isAdmin = user?.role === 'Administrador' || user?.id === 'usr-raul' || user?.nome?.toLowerCase() === 'raul';
+  const isRep = user?.role === 'Representante';
+
+  if (isAdmin) {
+    return {
+      verDashboard: true,
+      verTodasVendas: true,
+      verComissoes: true,
+      verClientes: true,
+      editarClientes: true,
+      verProdutos: true,
+      editarProdutos: true,
+      verRepresentadas: true,
+      verFinanceiro: true,
+      criarPedidos: true,
+      editarPedidos: true,
+      excluirPedidos: true,
+      gerenciarUsuarios: true,
+    };
+  }
+
+  const p = user?.permissoes || {};
+
+  return {
+    verDashboard: p.verDashboard !== undefined ? p.verDashboard : true,
+    verTodasVendas: p.verTodasVendas !== undefined ? p.verTodasVendas : (isRep ? true : false),
+    verComissoes: p.verComissoes !== undefined ? p.verComissoes : (isRep ? true : false),
+    verClientes: p.verClientes !== undefined ? p.verClientes : true,
+    editarClientes: p.editarClientes !== undefined ? p.editarClientes : true,
+    verProdutos: p.verProdutos !== undefined ? p.verProdutos : true,
+    editarProdutos: p.editarProdutos !== undefined ? p.editarProdutos : (isRep ? true : false),
+    verRepresentadas: p.verRepresentadas !== undefined ? p.verRepresentadas : true,
+    verFinanceiro: p.verFinanceiro !== undefined ? p.verFinanceiro : (p.verComissoes ?? false),
+    criarPedidos: p.criarPedidos !== undefined ? p.criarPedidos : true,
+    editarPedidos: p.editarPedidos !== undefined ? p.editarPedidos : true,
+    excluirPedidos: p.excluirPedidos !== undefined ? p.excluirPedidos : false,
+    gerenciarUsuarios: p.gerenciarUsuarios !== undefined ? p.gerenciarUsuarios : false,
+  };
+}
+
 export const formatarMoeda = (valor: number): string => {
   return (valor || 0).toLocaleString('pt-BR', {
     style: 'currency',

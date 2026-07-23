@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Produto, Representada } from '../types';
-import { formatarMoeda } from '../utils';
+import { formatarMoeda, getUserPermissions } from '../utils';
 import { 
   Plus, 
   Edit3, 
@@ -21,6 +21,7 @@ interface ProdutosTabProps {
   onAdd: (prod: Produto) => void;
   onEdit: (prod: Produto) => void;
   onDelete: (id: string) => void;
+  currentUser?: any;
 }
 
 export default function ProdutosTab({
@@ -29,7 +30,9 @@ export default function ProdutosTab({
   onAdd,
   onEdit,
   onDelete,
+  currentUser,
 }: ProdutosTabProps) {
+  const userPermissions = getUserPermissions(currentUser);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepFilter, setSelectedRepFilter] = useState('all');

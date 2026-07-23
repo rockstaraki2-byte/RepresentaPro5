@@ -363,6 +363,34 @@ export default function RepresentadasTab({
                       />
                     </div>
 
+                    {/* Frete Padrão da Fábrica */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-mono uppercase text-slate-500">Regra de Frete Padrão</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <select
+                          value={form.fretePadraoTipo || 'nenhum'}
+                          onChange={(e) => setForm({ ...form, fretePadraoTipo: e.target.value as any })}
+                          className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-medium"
+                        >
+                          <option value="nenhum">Sem Frete / Retirada</option>
+                          <option value="percentual">% do Valor do Pedido</option>
+                          <option value="fixo">Frete Fixo (R$)</option>
+                          <option value="manual">Valor Manual no Pedido</option>
+                        </select>
+                        {(form.fretePadraoTipo === 'percentual' || form.fretePadraoTipo === 'fixo') && (
+                          <input 
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder={form.fretePadraoTipo === 'percentual' ? 'Ex: 3.5 (%)' : 'Ex: 150.00 (R$)'}
+                            value={form.fretePadraoValor === undefined ? '' : form.fretePadraoValor}
+                            onChange={(e) => setForm({ ...form, fretePadraoValor: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-mono font-bold"
+                          />
+                        )}
+                      </div>
+                    </div>
+
                     {/* Segmento */}
                     <div className="space-y-1">
                       <label className="block text-xs font-mono uppercase text-slate-500">Segmento de Atuação</label>

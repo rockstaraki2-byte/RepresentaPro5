@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Cliente, Pedido, Representada } from '../types';
-import { formatarCNPJ, formatarMoeda, formatarTelefone, consultarCNPJ } from '../utils';
+import { formatarCNPJ, formatarMoeda, formatarTelefone, consultarCNPJ, getUserPermissions } from '../utils';
 import { 
   Plus, 
   Edit3, 
@@ -28,6 +28,7 @@ interface ClientesTabProps {
   onAdd: (cli: Cliente) => void;
   onEdit: (cli: Cliente) => void;
   onDelete: (id: string) => void;
+  currentUser?: any;
 }
 
 export default function ClientesTab({
@@ -37,7 +38,9 @@ export default function ClientesTab({
   onAdd,
   onEdit,
   onDelete,
+  currentUser,
 }: ClientesTabProps) {
+  const userPermissions = getUserPermissions(currentUser);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
@@ -55,6 +58,7 @@ export default function ClientesTab({
     telefone: '',
     email: '',
     contato: '',
+    tipoFaturamento: 'Nota Fiscal',
   });
 
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -70,6 +74,7 @@ export default function ClientesTab({
       telefone: '',
       email: '',
       contato: '',
+      tipoFaturamento: 'Nota Fiscal',
     });
     setEditingId(null);
     setValidationError(null);
@@ -147,6 +152,7 @@ export default function ClientesTab({
       telefone: form.telefone?.trim() || '',
       email: form.email?.trim() || '',
       contato: form.contato?.trim() || '',
+      tipoFaturamento: form.tipoFaturamento || 'Nota Fiscal',
     };
 
     if (editingId) {
@@ -373,6 +379,24 @@ export default function ClientesTab({
                       </div>
                     </div>
 
+                    {/* Opção de Faturamento (Nota Fiscal x Notinha) */}
+                    <div className="space-y-1 md:col-span-1">
+                      <label className="block text-xs font-mono uppercase text-slate-500 font-bold text-slate-700">
+                        Faturamento Padrão <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={form.tipoFaturamento || 'Nota Fiscal'}
+                        onChange={(e) => setForm({ ...form, tipoFaturamento: e.target.value as any })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-bold cursor-pointer"
+                      >
+                        <option value="Nota Fiscal">📄 Nota Fiscal (Com NF)</option>
+                        <option value="Notinha">📝 Notinha (Sem NF / Venda Direta)</option>
+                      </select>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Define como os novos pedidos deste cliente serão identificados por padrão.
+                      </p>
+                    </div>
+
                   </div>
                 </form>
               </div>
@@ -504,9 +528,18 @@ export default function ClientesTab({
                     <div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400">Cliente Carteira</span>
-                        <div className="flex items-center gap-1 text-[11px] text-slate-500 font-bold">
-                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>{cli.cidade || 'Sem Cidade'}-{cli.uf || 'UF'}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                            cli.tipoFaturamento === 'Notinha' 
+                              ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                              : 'bg-blue-50 text-blue-800 border-blue-200'
+                          }`}>
+                            {cli.tipoFaturamento === 'Notinha' ? '📝 Notinha' : '📄 Nota Fiscal'}
+                          </span>
+                          <div className="flex items-center gap-1 text-[11px] text-slate-500 font-bold">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{cli.cidade || 'Sem Cidade'}-{cli.uf || 'UF'}</span>
+                          </div>
                         </div>
                       </div>
                       <h5 className="font-serif font-bold text-base text-slate-800 leading-tight mt-1">{cli.nomeFantasia}</h5>

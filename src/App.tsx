@@ -18,7 +18,7 @@ import {
   RefreshCw,
   X as CloseIcon
 } from 'lucide-react';
-import { formatarMoeda } from './utils';
+import { formatarMoeda, getUserPermissions } from './utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Import Types
@@ -454,6 +454,7 @@ export default function App() {
 
   // --- Data Isolation Filter Layers ---
   // We filter all business collections by activeEmpresaId so different companies NEVER see each other's data!
+  const userPermissions = getUserPermissions(currentUser);
   const isRaul = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
   const showAllData = isRaul && activeEmpresaId === 'all';
 
@@ -461,8 +462,8 @@ export default function App() {
   const filteredClientes = showAllData ? clientes : clientes.filter(c => c.empresaRepresentacaoId === activeEmpresaId);
   
   let baseFilteredPedidos = showAllData ? pedidos : pedidos.filter(p => p.empresaRepresentacaoId === activeEmpresaId);
-  if (currentUser?.role !== 'Administrador' && !showAllData) {
-    baseFilteredPedidos = baseFilteredPedidos.filter(p => p.createdByUserId === currentUser?.id);
+  if (!userPermissions.verTodasVendas && !showAllData) {
+    baseFilteredPedidos = baseFilteredPedidos.filter(p => p.createdByUserId === currentUser?.id || !p.createdByUserId);
   }
   const filteredPedidos = baseFilteredPedidos;
 
@@ -952,60 +953,68 @@ export default function App() {
         <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200">
           
           {/* Tab 1: Painel Geral */}
-          <button 
-            id="tab-dashboard"
-            onClick={() => { setActiveTab('dashboard'); setActivePedidoToEdit(null); }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'dashboard' 
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Painel Geral</span>
-          </button>
+          {userPermissions.verDashboard && (
+            <button 
+              id="tab-dashboard"
+              onClick={() => { setActiveTab('dashboard'); setActivePedidoToEdit(null); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'dashboard' 
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Painel Geral</span>
+            </button>
+          )}
 
           {/* Tab 2: Representadas */}
-          <button 
-            id="tab-representadas"
-            onClick={() => { setActiveTab('representadas'); setActivePedidoToEdit(null); }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'representadas' 
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Landmark className="w-4 h-4" />
-            <span>Representadas / Fábricas</span>
-          </button>
+          {userPermissions.verRepresentadas && (
+            <button 
+              id="tab-representadas"
+              onClick={() => { setActiveTab('representadas'); setActivePedidoToEdit(null); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'representadas' 
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Landmark className="w-4 h-4" />
+              <span>Representadas / Fábricas</span>
+            </button>
+          )}
 
           {/* Tab 3: Clientes */}
-          <button 
-            id="tab-clientes"
-            onClick={() => { setActiveTab('clientes'); setActivePedidoToEdit(null); }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'clientes' 
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Carteira de Clientes</span>
-          </button>
+          {userPermissions.verClientes && (
+            <button 
+              id="tab-clientes"
+              onClick={() => { setActiveTab('clientes'); setActivePedidoToEdit(null); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'clientes' 
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Carteira de Clientes</span>
+            </button>
+          )}
 
           {/* Tab: Produtos */}
-          <button 
-            id="tab-produtos"
-            onClick={() => { setActiveTab('produtos'); setActivePedidoToEdit(null); }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'produtos' 
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Tag className="w-4 h-4" />
-            <span>Produtos / Catálogo</span>
-          </button>
+          {userPermissions.verProdutos && (
+            <button 
+              id="tab-produtos"
+              onClick={() => { setActiveTab('produtos'); setActivePedidoToEdit(null); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'produtos' 
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Tag className="w-4 h-4" />
+              <span>Produtos / Catálogo</span>
+            </button>
+          )}
 
           {/* Tab 4: Pedidos / Vendas */}
           <button 
@@ -1022,7 +1031,7 @@ export default function App() {
           </button>
 
           {/* Tab: Financeiro */}
-          {currentUser?.role === 'Administrador' && (
+          {(currentUser?.role === 'Administrador' || userPermissions.verFinanceiro) && (
             <button 
               id="tab-financeiro"
               onClick={() => { setActiveTab('financeiro'); setActivePedidoToEdit(null); }}
@@ -1038,7 +1047,7 @@ export default function App() {
           )}
 
           {/* Tab 5: Administração & Multiempresas */}
-          {currentUser?.role === 'Administrador' && (
+          {(currentUser?.role === 'Administrador' || userPermissions.gerenciarUsuarios) && (
             <button 
               id="tab-admin"
               onClick={() => { setActiveTab('admin'); setActivePedidoToEdit(null); }}
@@ -1098,6 +1107,7 @@ export default function App() {
                   onAdd={handleAddCliente}
                   onEdit={handleEditCliente}
                   onDelete={handleDeleteCliente}
+                  currentUser={currentUser}
                 />
               )}
 
@@ -1108,6 +1118,7 @@ export default function App() {
                   onAdd={handleAddProduto}
                   onEdit={handleEditProduto}
                   onDelete={handleDeleteProduto}
+                  currentUser={currentUser}
                 />
               )}
 
@@ -1183,48 +1194,56 @@ export default function App() {
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200/85 px-2 py-2 flex justify-around items-center shadow-[0_-4px_12px_rgba(0,0,0,0.05)] sm:hidden">
         
         {/* Mobile Tab 1: Painel */}
-        <button
-          onClick={() => { setActiveTab('dashboard'); setActivePedidoToEdit(null); }}
-          className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
-            activeTab === 'dashboard' ? 'text-emerald-600 scale-105' : 'text-slate-500'
-          }`}
-        >
-          <LayoutDashboard className="w-4 h-4" />
-          <span className="text-[8px] font-bold mt-0.5">Painel</span>
-        </button>
+        {userPermissions.verDashboard && (
+          <button
+            onClick={() => { setActiveTab('dashboard'); setActivePedidoToEdit(null); }}
+            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+              activeTab === 'dashboard' ? 'text-emerald-600 scale-105' : 'text-slate-500'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span className="text-[8px] font-bold mt-0.5">Painel</span>
+          </button>
+        )}
 
         {/* Mobile Tab 2: Representadas */}
-        <button
-          onClick={() => { setActiveTab('representadas'); setActivePedidoToEdit(null); }}
-          className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
-            activeTab === 'representadas' ? 'text-emerald-600 scale-105' : 'text-slate-500'
-          }`}
-        >
-          <Landmark className="w-4 h-4" />
-          <span className="text-[8px] font-bold mt-0.5">Fábricas</span>
-        </button>
+        {userPermissions.verRepresentadas && (
+          <button
+            onClick={() => { setActiveTab('representadas'); setActivePedidoToEdit(null); }}
+            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+              activeTab === 'representadas' ? 'text-emerald-600 scale-105' : 'text-slate-500'
+            }`}
+          >
+            <Landmark className="w-4 h-4" />
+            <span className="text-[8px] font-bold mt-0.5">Fábricas</span>
+          </button>
+        )}
 
         {/* Mobile Tab 3: Clientes */}
-        <button
-          onClick={() => { setActiveTab('clientes'); setActivePedidoToEdit(null); }}
-          className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
-            activeTab === 'clientes' ? 'text-emerald-600 scale-105' : 'text-slate-500'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span className="text-[8px] font-bold mt-0.5">Clientes</span>
-        </button>
+        {userPermissions.verClientes && (
+          <button
+            onClick={() => { setActiveTab('clientes'); setActivePedidoToEdit(null); }}
+            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+              activeTab === 'clientes' ? 'text-emerald-600 scale-105' : 'text-slate-500'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span className="text-[8px] font-bold mt-0.5">Clientes</span>
+          </button>
+        )}
 
         {/* Mobile Tab 4: Produtos */}
-        <button
-          onClick={() => { setActiveTab('produtos'); setActivePedidoToEdit(null); }}
-          className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
-            activeTab === 'produtos' ? 'text-emerald-600 scale-105' : 'text-slate-500'
-          }`}
-        >
-          <Tag className="w-4 h-4" />
-          <span className="text-[8px] font-bold mt-0.5">Produtos</span>
-        </button>
+        {userPermissions.verProdutos && (
+          <button
+            onClick={() => { setActiveTab('produtos'); setActivePedidoToEdit(null); }}
+            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+              activeTab === 'produtos' ? 'text-emerald-600 scale-105' : 'text-slate-500'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+            <span className="text-[8px] font-bold mt-0.5">Produtos</span>
+          </button>
+        )}
 
         {/* Mobile Tab 5: Pedidos */}
         <button
@@ -1238,7 +1257,7 @@ export default function App() {
         </button>
 
         {/* Mobile Tab 5.5: Financeiro */}
-        {currentUser?.role === 'Administrador' && (
+        {(currentUser?.role === 'Administrador' || userPermissions.verFinanceiro) && (
           <button
             onClick={() => { setActiveTab('financeiro'); setActivePedidoToEdit(null); }}
             className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
@@ -1251,7 +1270,7 @@ export default function App() {
         )}
 
         {/* Mobile Tab 6: Admin */}
-        {currentUser?.role === 'Administrador' && (
+        {(currentUser?.role === 'Administrador' || userPermissions.gerenciarUsuarios) && (
           <button
             onClick={() => { setActiveTab('admin'); }}
             className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${

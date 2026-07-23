@@ -88,8 +88,12 @@ export function gerarPedidoPDF(
   doc.text(`PEDIDO DE VENDA: #${pedido.numeroPedido}`, 20, 55);
   
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text(`Emissão: ${formatarData(pedido.dataPedido)}   |   Status: ${pedido.status.toUpperCase()}`, 20, 62);
+  doc.setFontSize(8);
+  const fatTxt = (pedido.tipoFaturamento || cliente?.tipoFaturamento) === 'Notinha' ? 'Notinha' : 'Nota Fiscal';
+  const freteTxt = pedido.opcaoFrete && pedido.opcaoFrete !== 'nenhum' 
+    ? `${pedido.tipoFrete || 'FOB'} (${pedido.valorFrete ? formatarMoeda(pedido.valorFrete) : 'R$ 0,00'})` 
+    : 'Sem Frete';
+  doc.text(`Emissão: ${formatarData(pedido.dataPedido)}   |   Faturamento: ${fatTxt}   |   Frete: ${freteTxt}   |   Status: ${pedido.status.toUpperCase()}`, 20, 62);
 
   let y = 74;
 
@@ -152,7 +156,9 @@ export function gerarPedidoPDF(
 
     doc.setFontSize(8);
     // Safe truncation to prevent overlapping with next columns
-    let fullDesc = item.descricao;
+    let fullDesc = '';
+    if (item.codigo) fullDesc += `[${item.codigo}] `;
+    fullDesc += item.descricao;
     if (item.cor) fullDesc += ` | Cor: ${item.cor}`;
     if (item.variacao) fullDesc += ` | Var: ${item.variacao}`;
     const displayDesc = fullDesc.length > 55 ? fullDesc.substring(0, 52) + '...' : fullDesc;
@@ -227,19 +233,39 @@ export function gerarPedidoPDF(
   y += 5;
 
   // Total Summary Panel
+  const temFrete = Boolean(pedido.valorFrete && pedido.valorFrete > 0);
+  const panelHeight = temFrete ? 32 : 24;
+  const subtotalProd = pedido.valorSubtotal || (temFrete ? (pedido.valorTotal - (pedido.valorFrete || 0)) : pedido.valorTotal);
+
   doc.setFillColor(248, 250, 252);
-  doc.rect(115, y, 80, 24, 'F');
-  doc.rect(115, y, 80, 24, 'D');
+  doc.rect(115, y, 80, panelHeight, 'F');
+  doc.rect(115, y, 80, panelHeight, 'D');
 
   doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text('VALORES TOTAIS', 120, y + 6);
+  doc.text('RESUMO FINANCEIRO DO PEDIDO', 120, y + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text('Total Produtos faturados:', 120, y + 12);
-  doc.text(formatarMoeda(pedido.valorTotal), 190, y + 12, { align: 'right' });
+  doc.text('Subtotal dos Produtos:', 120, y + 12);
+  doc.text(formatarMoeda(subtotalProd), 190, y + 12, { align: 'right' });
+
+  if (temFrete) {
+    const labelFrete = `Frete (${pedido.tipoFrete || 'FOB'}):`;
+    doc.text(labelFrete, 120, y + 18);
+    doc.text(formatarMoeda(pedido.valorFrete || 0), 190, y + 18, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('VALOR TOTAL FINAL:', 120, y + 25);
+    doc.text(formatarMoeda(pedido.valorTotal), 190, y + 25, { align: 'right' });
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('VALOR TOTAL DO PEDIDO:', 120, y + 18);
+    doc.text(formatarMoeda(pedido.valorTotal), 190, y + 18, { align: 'right' });
+  }
 
   // Add a nice footer
   doc.setFont('helvetica', 'italic');
