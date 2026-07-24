@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Cliente, Pedido, Representada } from '../types';
-import { formatarCNPJ, formatarMoeda, formatarTelefone, consultarCNPJ, getUserPermissions } from '../utils';
+import { formatarCNPJ, formatarCPF, formatarDocumento, formatarMoeda, formatarTelefone, consultarCNPJ, getUserPermissions } from '../utils';
 import { 
   Plus, 
   Edit3, 
@@ -49,6 +49,7 @@ export default function ClientesTab({
   const [selectedClientHistory, setSelectedClientHistory] = useState<Cliente | null>(null);
 
   const [form, setForm] = useState<Partial<Cliente>>({
+    tipoPessoa: 'PJ',
     nomeFantasia: '',
     razaoSocial: '',
     cnpj: '',
@@ -65,6 +66,7 @@ export default function ClientesTab({
 
   const resetForm = () => {
     setForm({
+      tipoPessoa: 'PJ',
       nomeFantasia: '',
       razaoSocial: '',
       cnpj: '',
@@ -81,7 +83,10 @@ export default function ClientesTab({
   };
 
   const handleEditClick = (cli: Cliente) => {
-    setForm(cli);
+    setForm({
+      ...cli,
+      tipoPessoa: cli.tipoPessoa || (cli.cnpj?.replace(/\D/g, '').length === 11 ? 'PF' : 'PJ'),
+    });
     setEditingId(cli.id);
     setValidationError(null);
     setIsFormExpanded(true); // Auto-expand when editing
@@ -125,15 +130,28 @@ export default function ClientesTab({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    const isPF = form.tipoPessoa === 'PF';
+
     if (!form.nomeFantasia?.trim() || !form.razaoSocial?.trim() || !form.cnpj?.trim()) {
-      setValidationError('Por favor, preencha os campos obrigatórios (Nome Fantasia, Razão Social e CNPJ).');
+      setValidationError(
+        isPF
+          ? 'Por favor, preencha os campos obrigatórios (Nome / Apelido, Nome Completo e CPF).'
+          : 'Por favor, preencha os campos obrigatórios (Nome Fantasia, Razão Social e CNPJ).'
+      );
       return;
     }
 
-    const cleanedCnpj = form.cnpj.replace(/\D/g, '');
-    if (cleanedCnpj.length !== 14) {
-      setValidationError('O CNPJ deve conter exatamente 14 dígitos numéricos.');
-      return;
+    const cleanedDoc = form.cnpj.replace(/\D/g, '');
+    if (isPF) {
+      if (cleanedDoc.length !== 11) {
+        setValidationError('O CPF deve conter exatamente 11 dígitos numéricos.');
+        return;
+      }
+    } else {
+      if (cleanedDoc.length !== 14) {
+        setValidationError('O CNPJ deve conter exatamente 14 dígitos numéricos.');
+        return;
+      }
     }
 
     if (form.uf && form.uf.trim().length !== 2) {
@@ -143,9 +161,10 @@ export default function ClientesTab({
 
     const finalForm: Cliente = {
       id: editingId || `cli-${Date.now()}`,
+      tipoPessoa: isPF ? 'PF' : 'PJ',
       nomeFantasia: form.nomeFantasia.trim(),
       razaoSocial: form.razaoSocial.trim(),
-      cnpj: formatarCNPJ(cleanedCnpj),
+      cnpj: isPF ? formatarCPF(cleanedDoc) : formatarCNPJ(cleanedDoc),
       endereco: form.endereco?.trim() || '',
       cidade: form.cidade?.trim() || '',
       uf: (form.uf?.trim() || '').toUpperCase(),
@@ -250,56 +269,99 @@ export default function ClientesTab({
                 )}
 
                 <form onSubmit={handleSubmit} id="cli-form-elem" className="space-y-4">
+                  
+                  {/* Tipo de Pessoa Toggle */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">Tipo de Cadastro:</span>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
+                        <input
+                          type="radio"
+                          name="tipoPessoa"
+                          value="PJ"
+                          checked={form.tipoPessoa !== 'PF'}
+                          onChange={() => setForm(prev => ({ ...prev, tipoPessoa: 'PJ' }))}
+                          className="text-emerald-600 focus:ring-emerald-500 accent-emerald-600"
+                        />
+                        <span>🏢 Pessoa Jurídica (CNPJ)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
+                        <input
+                          type="radio"
+                          name="tipoPessoa"
+                          value="PF"
+                          checked={form.tipoPessoa === 'PF'}
+                          onChange={() => setForm(prev => ({ ...prev, tipoPessoa: 'PF' }))}
+                          className="text-emerald-600 focus:ring-emerald-500 accent-emerald-600"
+                        />
+                        <span>👤 Pessoa Física (CPF)</span>
+                      </label>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     
-                    {/* CNPJ com Busca */}
+                    {/* Documento (CNPJ / CPF) com Busca para CNPJ */}
                     <div className="space-y-1 md:col-span-1">
                       <label className="block text-xs font-mono uppercase text-slate-500">
-                        CNPJ do Cliente <span className="text-red-500">*</span>
+                        {form.tipoPessoa === 'PF' ? 'CPF do Cliente' : 'CNPJ do Cliente'} <span className="text-red-500">*</span>
                       </label>
                       <div className="flex gap-2">
                         <input 
                           type="text"
-                          placeholder="00.000.000/0000-00"
+                          placeholder={form.tipoPessoa === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'}
                           value={form.cnpj || ''}
                           onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
                           className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-850 font-mono"
                         />
-                        <button
-                          type="button"
-                          disabled={isSearchingCnpj}
-                          onClick={handleCnpjLookup}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer disabled:bg-slate-300"
-                          title="Buscar dados do CNPJ na Receita Federal"
-                        >
-                          {isSearchingCnpj ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Search className="w-3.5 h-3.5" />
-                          )}
-                          <span>Buscar</span>
-                        </button>
+                        {form.tipoPessoa !== 'PF' && (
+                          <button
+                            type="button"
+                            disabled={isSearchingCnpj}
+                            onClick={handleCnpjLookup}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer disabled:bg-slate-300"
+                            title="Buscar dados do CNPJ na Receita Federal"
+                          >
+                            {isSearchingCnpj ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Search className="w-3.5 h-3.5" />
+                            )}
+                            <span>Buscar</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    {/* Nome Fantasia */}
+                    {/* Nome Fantasia / Apelido */}
                     <div className="space-y-1">
-                      <label className="block text-xs font-mono uppercase text-slate-500">Nome Fantasia / Comercial <span className="text-red-500">*</span></label>
+                      <label className="block text-xs font-mono uppercase text-slate-500">
+                        {form.tipoPessoa === 'PF' ? 'Nome / Apelido Comercial' : 'Nome Fantasia / Comercial'} <span className="text-red-500">*</span>
+                      </label>
                       <input 
                         type="text"
-                        placeholder="Ex: Comercial Silva"
+                        placeholder={form.tipoPessoa === 'PF' ? 'Ex: João do Bar' : 'Ex: Comercial Silva'}
                         value={form.nomeFantasia || ''}
-                        onChange={(e) => setForm({ ...form, nomeFantasia: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setForm(prev => ({ 
+                            ...prev, 
+                            nomeFantasia: val,
+                            razaoSocial: form.tipoPessoa === 'PF' && (!prev.razaoSocial || prev.razaoSocial === prev.nomeFantasia) ? val : prev.razaoSocial
+                          }));
+                        }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-bold"
                       />
                     </div>
 
-                    {/* Razão Social */}
+                    {/* Razão Social / Nome Completo */}
                     <div className="space-y-1">
-                      <label className="block text-xs font-mono uppercase text-slate-500">Razão Social / Nome de Registro <span className="text-red-500">*</span></label>
+                      <label className="block text-xs font-mono uppercase text-slate-500">
+                        {form.tipoPessoa === 'PF' ? 'Nome Completo' : 'Razão Social / Nome de Registro'} <span className="text-red-500">*</span>
+                      </label>
                       <input 
                         type="text"
-                        placeholder="Ex: Silva Supermercados Eireli"
+                        placeholder={form.tipoPessoa === 'PF' ? 'Ex: João da Silva Santos' : 'Ex: Silva Supermercados Eireli'}
                         value={form.razaoSocial || ''}
                         onChange={(e) => setForm({ ...form, razaoSocial: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-805"
@@ -530,6 +592,13 @@ export default function ClientesTab({
                         <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400">Cliente Carteira</span>
                         <div className="flex items-center gap-1.5">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                            cli.tipoPessoa === 'PF'
+                              ? 'bg-purple-50 text-purple-800 border-purple-200'
+                              : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                          }`}>
+                            {cli.tipoPessoa === 'PF' ? '👤 Pessoa Física' : '🏢 Pessoa Jurídica'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
                             cli.tipoFaturamento === 'Notinha' 
                               ? 'bg-amber-50 text-amber-800 border-amber-200' 
                               : 'bg-blue-50 text-blue-800 border-blue-200'
@@ -543,7 +612,9 @@ export default function ClientesTab({
                         </div>
                       </div>
                       <h5 className="font-serif font-bold text-base text-slate-800 leading-tight mt-1">{cli.nomeFantasia}</h5>
-                      <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{cli.cnpj}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                        {cli.tipoPessoa === 'PF' ? 'CPF: ' : 'CNPJ: '}{formatarDocumento(cli.cnpj, cli.tipoPessoa)}
+                      </p>
                       
                       {isOverdue && (
                         <div className="mt-2.5 bg-red-50 text-red-700 border border-red-100 rounded-lg p-2.5 flex items-start gap-1.5 font-mono text-[10px] font-bold">
@@ -696,7 +767,9 @@ export default function ClientesTab({
                   <div>
                     <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">Histórico de Compras & Recorrência</span>
                     <h3 className="font-serif font-bold text-lg text-slate-800 leading-tight mt-1">{cli.nomeFantasia}</h3>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">{cli.razaoSocial} | CNPJ: {cli.cnpj}</p>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">
+                      {cli.razaoSocial} | {cli.tipoPessoa === 'PF' ? 'CPF' : 'CNPJ'}: {formatarDocumento(cli.cnpj, cli.tipoPessoa)}
+                    </p>
                   </div>
                   <button
                     onClick={() => setSelectedClientHistory(null)}

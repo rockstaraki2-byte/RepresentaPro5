@@ -19,9 +19,10 @@ export interface Representada {
 
 export interface Cliente {
   id: string;
+  tipoPessoa?: 'PJ' | 'PF'; // Pessoa Jurídica (CNPJ) ou Pessoa Física (CPF)
   nomeFantasia: string;
   razaoSocial: string;
-  cnpj: string;
+  cnpj: string; // CNPJ ou CPF do cliente
   endereco: string;
   cidade: string;
   uf: string;

@@ -43,7 +43,7 @@ export default function ProdutosTab({
     codigo: '',
     nome: '',
     representadaId: '',
-    precoVenda: 0,
+    precoVenda: undefined,
     unidade: 'Un',
     descricao: '',
     ativo: true,
@@ -56,7 +56,7 @@ export default function ProdutosTab({
       codigo: '',
       nome: '',
       representadaId: representadas[0]?.id || '',
-      precoVenda: 0,
+      precoVenda: undefined,
       unidade: 'Un',
       descricao: '',
       ativo: true,
@@ -75,13 +75,8 @@ export default function ProdutosTab({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!form.codigo?.trim() || !form.nome?.trim() || form.precoVenda === undefined) {
-      setValidationError('Por favor, preencha os campos obrigatórios (Código, Nome, e Preço de Venda).');
-      return;
-    }
-
-    if (form.precoVenda <= 0) {
-      setValidationError('O Preço de Venda deve ser maior que zero.');
+    if (!form.codigo?.trim() || !form.nome?.trim()) {
+      setValidationError('Por favor, preencha os campos obrigatórios (Código e Nome do Produto).');
       return;
     }
 
@@ -90,7 +85,7 @@ export default function ProdutosTab({
       codigo: form.codigo.trim().toUpperCase(),
       nome: form.nome.trim(),
       representadaId: form.representadaId || undefined,
-      precoVenda: Number(form.precoVenda),
+      precoVenda: form.precoVenda !== undefined && form.precoVenda !== null ? Number(form.precoVenda) : 0,
       unidade: form.unidade?.trim() || 'Un',
       descricao: form.descricao?.trim() || '',
       ativo: form.ativo !== false,
@@ -255,12 +250,14 @@ export default function ProdutosTab({
 
                     {/* Preço de Venda */}
                     <div className="space-y-1">
-                      <label className="block text-xs font-mono uppercase text-slate-500">Preço de Venda (R$) <span className="text-red-500">*</span></label>
+                      <label className="block text-xs font-mono uppercase text-slate-500">
+                        Preço de Venda (R$) <span className="text-slate-400 font-normal lowercase">(opcional)</span>
+                      </label>
                       <input 
                         type="number"
                         step="0.01"
-                        placeholder="0.00"
-                        value={form.precoVenda || ''}
+                        placeholder="0.00 (opcional)"
+                        value={form.precoVenda !== undefined && form.precoVenda !== null ? form.precoVenda : ''}
                         onChange={(e) => setForm({ ...form, precoVenda: e.target.value === '' ? undefined : Number(e.target.value) })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-mono"
                       />

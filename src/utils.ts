@@ -57,6 +57,23 @@ export const formatarCNPJ = (cnpj: string): string => {
   );
 };
 
+export const formatarCPF = (cpf: string): string => {
+  const limpo = (cpf || '').replace(/\D/g, '');
+  if (limpo.length !== 11) return cpf;
+  return limpo.replace(
+    /^(\d{3})(\d{3})(\d{3})(\d{2})$/,
+    '$1.$2.$3-$4'
+  );
+};
+
+export const formatarDocumento = (doc: string, tipoPessoa?: 'PJ' | 'PF'): string => {
+  const limpo = (doc || '').replace(/\D/g, '');
+  if (tipoPessoa === 'PF' || limpo.length === 11) {
+    return formatarCPF(doc);
+  }
+  return formatarCNPJ(doc);
+};
+
 export const formatarData = (dataStr: string): string => {
   if (!dataStr) return '';
   const partes = dataStr.split('-');
