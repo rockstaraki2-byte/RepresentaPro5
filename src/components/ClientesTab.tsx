@@ -447,12 +447,16 @@ export default function ClientesTab({
                         Faturamento Padrão <span className="text-red-500">*</span>
                       </label>
                       <select
-                        value={form.tipoFaturamento || 'Nota Fiscal'}
+                        value={form.tipoFaturamento || 'Nf 100%'}
                         onChange={(e) => setForm({ ...form, tipoFaturamento: e.target.value as any })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-bold cursor-pointer"
                       >
+                        <option value="Nf 100%">📄 NF 100% (Faturamento Integral)</option>
+                        <option value="Nf 50%">📄 NF 50% (Faturamento 50% em Nota)</option>
+                        <option value="Nf 0%">📄 NF 0% (Sem Nota Fiscal)</option>
+                        <option value="Nf pauta">📄 NF Pauta (% Mínima por Nota)</option>
                         <option value="Nota Fiscal">📄 Nota Fiscal (Com NF)</option>
-                        <option value="Notinha">📝 Notinha (Sem NF / Venda Direta)</option>
+                        <option value="Notinha">📝 Notinha (Sem NF)</option>
                       </select>
                       <p className="text-[10px] text-slate-400 font-mono">
                         Define como os novos pedidos deste cliente serão identificados por padrão.
@@ -599,11 +603,11 @@ export default function ClientesTab({
                             {cli.tipoPessoa === 'PF' ? '👤 Pessoa Física' : '🏢 Pessoa Jurídica'}
                           </span>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                            cli.tipoFaturamento === 'Notinha' 
+                            cli.tipoFaturamento === 'Notinha' || cli.tipoFaturamento === 'Nf 0%'
                               ? 'bg-amber-50 text-amber-800 border-amber-200' 
                               : 'bg-blue-50 text-blue-800 border-blue-200'
                           }`}>
-                            {cli.tipoFaturamento === 'Notinha' ? '📝 Notinha' : '📄 Nota Fiscal'}
+                            {cli.tipoFaturamento ? `📄 ${cli.tipoFaturamento}` : '📄 NF 100%'}
                           </span>
                           <div className="flex items-center gap-1 text-[11px] text-slate-500 font-bold">
                             <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />

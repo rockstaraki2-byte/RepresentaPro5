@@ -74,6 +74,35 @@ export const formatarDocumento = (doc: string, tipoPessoa?: 'PJ' | 'PF'): string
   return formatarCNPJ(doc);
 };
 
+export const formatarTipoFaturamento = (tipoFaturamento?: string, percentualPauta?: number): string => {
+  if (!tipoFaturamento) return 'Nf 100%';
+  const lower = tipoFaturamento.toLowerCase();
+  if (lower.includes('pauta')) {
+    return percentualPauta !== undefined && percentualPauta !== null && percentualPauta > 0
+      ? `Nf pauta (${percentualPauta}%)`
+      : 'Nf pauta';
+  }
+  return tipoFaturamento;
+};
+
+export const formatUserNameClean = (user?: any): string => {
+  if (!user || (!user.nome && !user.email)) return 'Representante';
+  let name = user.nome || user.email || '';
+  if (name.includes('@')) {
+    name = name.split('@')[0];
+  }
+  if (name.includes('.')) {
+    name = name.split('.')[0];
+  } else if (name.includes(' ')) {
+    name = name.split(' ')[0];
+  }
+  name = name.trim();
+  if (name) {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  return 'Representante';
+};
+
 export const formatarData = (dataStr: string): string => {
   if (!dataStr) return '';
   const partes = dataStr.split('-');

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Pedido, Cliente, Representada, OrderItem, PedidoStatus, Produto } from '../types';
-import { formatarMoeda, formatarData, calcularParcelas } from '../utils';
+import { formatarMoeda, formatarData, calcularParcelas, formatarTipoFaturamento, formatUserNameClean } from '../utils';
 import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles, Calendar, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { gerarPedidoPDF, gerarResumoMensalPDF, gerarResumoPeriodoPDF } from '../lib/pdfGenerator';
@@ -162,7 +162,8 @@ export default function PedidosTab({
   const [condicoesPagamento, setCondicoesPagamento] = useState('');
 
   // Billing & Freight form states
-  const [tipoFaturamento, setTipoFaturamento] = useState<'Nota Fiscal' | 'Notinha'>('Nota Fiscal');
+  const [tipoFaturamento, setTipoFaturamento] = useState<string>('Nf 100%');
+  const [percentualNfPauta, setPercentualNfPauta] = useState<number | ''>('');
   const [opcaoFrete, setOpcaoFrete] = useState<'percentual' | 'fixo' | 'manual' | 'nenhum'>('nenhum');
   const [tipoFrete, setTipoFrete] = useState<'FOB' | 'CIF' | 'Sem Frete'>('FOB');
   const [percentualFrete, setPercentualFrete] = useState<number | ''>('');
@@ -281,6 +282,7 @@ export default function PedidosTab({
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState(false);
   const [recipientType, setRecipientType] = useState<'cliente' | 'fornecedor' | 'ambos'>('cliente');
+  const [whatsappModalPedido, setWhatsappModalPedido] = useState<Pedido | null>(null);
 
   // Load order for editing if triggered from props
   useEffect(() => {
@@ -355,7 +357,7 @@ export default function PedidosTab({
       if (cliSelected?.tipoFaturamento) {
         setTipoFaturamento(cliSelected.tipoFaturamento);
       } else {
-        setTipoFaturamento('Nota Fiscal');
+        setTipoFaturamento('Nf 100%');
       }
     }
   };
@@ -470,7 +472,8 @@ export default function PedidosTab({
     setItemVariacao('');
     setItemQuantidade('');
     setItemPreco(0);
-    setTipoFaturamento('Nota Fiscal');
+    setTipoFaturamento('Nf 100%');
+    setPercentualNfPauta('');
     setOpcaoFrete('nenhum');
     setTipoFrete('FOB');
     setPercentualFrete('');
@@ -492,7 +495,8 @@ export default function PedidosTab({
     setObservacoes(p.observacoes || '');
     setCondicoesPagamento(p.condicoesPagamento || '');
     const cliOfOrder = clientes.find(c => c.id === p.clienteId);
-    setTipoFaturamento(p.tipoFaturamento || cliOfOrder?.tipoFaturamento || 'Nota Fiscal');
+    setTipoFaturamento(p.tipoFaturamento || cliOfOrder?.tipoFaturamento || 'Nf 100%');
+    setPercentualNfPauta(p.percentualNfPauta !== undefined && p.percentualNfPauta !== null ? p.percentualNfPauta : '');
     setOpcaoFrete(p.opcaoFrete || 'nenhum');
     setTipoFrete(p.tipoFrete || 'FOB');
     setPercentualFrete(p.percentualFrete !== undefined ? p.percentualFrete : '');
@@ -578,28 +582,38 @@ export default function PedidosTab({
     setEmailBody(`${greeting},\n\nSegue a cópia digital do Pedido de Venda #${emailPedido.numeroPedido}.\n\nTipo de Faturamento: ${fatType === 'Notinha' ? 'Notinha (Sem NF)' : 'Nota Fiscal'}\nFrete: ${freteTxt}\nStatus: ${emailPedido.status}\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nSubtotal Produtos: ${formatarMoeda(emailPedido.valorSubtotal || emailPedido.valorTotal)}\nValor Total: ${formatarMoeda(emailPedido.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
   };
 
-  const handleSendWhatsApp = (p: Pedido) => {
-    const cli = clientes.find(c => c.id === p.clienteId);
-    const rep = representadas.find(r => r.id === p.representadaId);
-    
-    const formattedDate = formatarData(p.dataPedido);
-    const totalVal = formatarMoeda(p.valorTotal);
-    const fatType = p.tipoFaturamento || cli?.tipoFaturamento || 'Nota Fiscal';
-    const freteTxt = getOrderFreightText(p);
-    
+  const buildWhatsAppMessageText = (p: Pedido) => {
     const itemsList = buildOrderCopyItemsText(p.itens);
-    
-    const text = `Olá, *${cli?.contato || 'Cliente'}*!\n\nSegue a cópia do seu *Pedido #${p.numeroPedido}* em parceria com a fábrica *${rep?.nomeFantasia || 'Representada'}*:\n\n*Data do Pedido:* ${formattedDate}\n*Tipo de Faturamento:* ${fatType === 'Notinha' ? 'Notinha (Sem NF)' : 'Nota Fiscal'}\n*Frete:* ${freteTxt}\n*Status:* ${p.status}\n\n*Itens do Pedido:*\n${itemsList}\n\n*Valor Total do Pedido:* *${totalVal}*\n\nSe tiver qualquer dúvida, estou à disposição.\nAtenciosamente,\nRepresentação Comercial`;
-    
-    const firstPhone = cli?.telefone ? cli.telefone.split('/')[0].split('|')[0] : '';
-    const phone = firstPhone.replace(/\D/g, '');
-    let formattedPhone = phone;
-    if (phone && phone.length <= 11) {
-      formattedPhone = `55${phone}`;
+
+    let freteValText = 'R$ 0,00';
+    if (p.opcaoFrete && p.opcaoFrete !== 'nenhum' && p.valorFrete) {
+      freteValText = formatarMoeda(p.valorFrete);
+      if (p.tipoFrete) {
+        freteValText += ` (${p.tipoFrete})`;
+      }
+    } else if (p.tipoFrete === 'Sem Frete') {
+      freteValText = 'Sem Frete / Retirada';
     }
-    
-    const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+
+    const subtotalMercadorias = p.valorSubtotal || p.itens.reduce((sum, item) => sum + item.totalItem, 0);
+    const userName = formatUserNameClean(currentUser);
+    const empresaNome = empresaRepresentacao?.nomeFantasia || empresaRepresentacao?.razaoSocial || 'Representação Comercial';
+
+    return `prezado, segue copia do pedido ${p.numeroPedido}
+
+Itens do pedido
+${itemsList}
+
+Valor total: ${formatarMoeda(p.valorTotal)}
+Valor frete: ${freteValText}
+Valor mercadorias: ${formatarMoeda(subtotalMercadorias)}
+
+Att, ${userName}
+${empresaNome}`;
+  };
+
+  const handleSendWhatsApp = (p: Pedido) => {
+    setWhatsappModalPedido(p);
   };
 
   const handleSendEmail = async (e: React.FormEvent) => {
@@ -685,6 +699,11 @@ export default function PedidosTab({
       return;
     }
 
+    if ((tipoFaturamento === 'Nf pauta' || tipoFaturamento === 'Nf Pauta') && (!percentualNfPauta || Number(percentualNfPauta) <= 0)) {
+      setValidationError('Por favor, informe a porcentagem mínima de venda com Nota Fiscal (% NF Pauta).');
+      return;
+    }
+
     const subtotal = itens.reduce((sum, item) => sum + item.totalItem, 0);
     
     // Calculate Freight
@@ -724,6 +743,9 @@ export default function PedidosTab({
       itens,
       valorSubtotal: subtotal,
       tipoFaturamento,
+      percentualNfPauta: (tipoFaturamento === 'Nf pauta' || tipoFaturamento === 'Nf Pauta')
+        ? (typeof percentualNfPauta === 'number' ? percentualNfPauta : parseFloat(String(percentualNfPauta)) || undefined)
+        : undefined,
       opcaoFrete,
       tipoFrete,
       valorFrete: vFrete,
@@ -970,12 +992,43 @@ export default function PedidosTab({
                         </label>
                         <select 
                           value={tipoFaturamento}
-                          onChange={(e) => setTipoFaturamento(e.target.value as any)}
+                          onChange={(e) => setTipoFaturamento(e.target.value)}
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-bold cursor-pointer"
                         >
-                          <option value="Nota Fiscal">📄 Nota Fiscal (Com NF)</option>
-                          <option value="Notinha">📝 Notinha (Sem NF / Venda Direta)</option>
+                          <option value="Nf 100%">📄 NF 100% (Faturamento Integral)</option>
+                          <option value="Nf 50%">📄 NF 50% (Faturamento 50% em Nota)</option>
+                          <option value="Nf 0%">📄 NF 0% (Sem Nota Fiscal)</option>
+                          <option value="Nf pauta">📄 NF Pauta (% Mínima por Nota)</option>
+                          <option value="Nota Fiscal">📄 Nota Fiscal (100% NF)</option>
+                          <option value="Notinha">📝 Notinha (Sem NF)</option>
                         </select>
+
+                        {(tipoFaturamento === 'Nf pauta' || tipoFaturamento === 'Nf Pauta') && (
+                          <div className="pt-2 space-y-1 bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100">
+                            <label className="block text-[11px] font-mono uppercase text-emerald-800 font-bold">
+                              % Mínima com Nota Fiscal (Pauta) <span className="text-red-500">*</span>
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                max="100"
+                                placeholder="Ex: 30"
+                                value={percentualNfPauta}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setPercentualNfPauta(val === '' ? '' : parseFloat(val) || 0);
+                                }}
+                                className="w-full bg-white border border-emerald-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-600 text-slate-800 font-mono font-bold"
+                              />
+                              <span className="text-xs font-mono text-emerald-800 font-bold shrink-0">% em NF</span>
+                            </div>
+                            <p className="text-[10px] text-emerald-700 font-mono">
+                              % mínima do valor do pedido a ser faturada com Nota Fiscal.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Representada */}
@@ -1732,11 +1785,11 @@ export default function PedidosTab({
                         {p.status}
                       </span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                        (p.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha'
+                        (p.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha' || (p.tipoFaturamento || cli?.tipoFaturamento) === 'Nf 0%'
                           ? 'bg-amber-50 text-amber-800 border-amber-200'
                           : 'bg-blue-50 text-blue-800 border-blue-200'
                       }`}>
-                        {(p.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha' ? '📝 Notinha' : '📄 NF'}
+                        📄 {formatarTipoFaturamento(p.tipoFaturamento || cli?.tipoFaturamento, p.percentualNfPauta)}
                       </span>
                       {p.opcaoFrete && p.opcaoFrete !== 'nenhum' && (
                         <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border bg-slate-50 text-slate-700 border-slate-200">
@@ -2167,7 +2220,7 @@ export default function PedidosTab({
                     </div>
                     <div className="text-left sm:text-right font-mono text-xs space-y-0.5">
                       <p className="text-slate-500">Emissão: <strong className="text-slate-800">{formatarData(printPedido.dataPedido)}</strong></p>
-                      <p className="text-slate-500">Faturamento: <strong className="text-slate-800">{(printPedido.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha' ? '📝 Notinha (Sem NF)' : '📄 Nota Fiscal'}</strong></p>
+                      <p className="text-slate-500">Faturamento: <strong className="text-slate-800">📄 {formatarTipoFaturamento(printPedido.tipoFaturamento || cli?.tipoFaturamento, printPedido.percentualNfPauta)}</strong></p>
                       <p className="text-slate-500">
                         Frete: <strong className="text-slate-800">
                           {printPedido.opcaoFrete && printPedido.opcaoFrete !== 'nenhum' 
@@ -2325,6 +2378,169 @@ export default function PedidosTab({
                     <p className="font-bold">© {new Date().getFullYear()} Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468</p>
                   </div>
 
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* Modal Enviar WhatsApp */}
+      <AnimatePresence>
+        {whatsappModalPedido && (() => {
+          const p = whatsappModalPedido;
+          const cli = clientes.find(c => c.id === p.clienteId);
+          const rep = representadas.find(r => r.id === p.representadaId);
+
+          const messageText = buildWhatsAppMessageText(p);
+
+          const getCleanPhone = (tel?: string) => {
+            if (!tel) return '';
+            const first = tel.split('/')[0].split('|')[0];
+            const digits = first.replace(/\D/g, '');
+            if (digits && digits.length <= 11) {
+              return `55${digits}`;
+            }
+            return digits;
+          };
+
+          const phoneCliente = getCleanPhone(cli?.telefone);
+          const phoneFornecedor = getCleanPhone(rep?.telefone);
+
+          const handleOpenWhatsApp = (phone: string) => {
+            if (!phone) {
+              alert('Telefone não cadastrado ou em formato inválido.');
+              return;
+            }
+            const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(messageText)}`;
+            window.open(url, '_blank');
+          };
+
+          return (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]"
+              >
+                {/* Header */}
+                <div className="p-4 border-b border-slate-100 bg-emerald-600 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+                      <MessageCircle className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-mono font-bold text-xs text-white">Enviar Pedido via WhatsApp</h4>
+                      <p className="text-emerald-100 text-[10px] font-mono">Pedido #{p.numeroPedido}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setWhatsappModalPedido(null)}
+                    className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="p-5 space-y-4 overflow-y-auto">
+                  {/* Direct Send Buttons */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-mono uppercase text-slate-500 font-bold">
+                      Selecione o Destinatário para Envio:
+                    </label>
+
+                    {/* Send to Client */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenWhatsApp(phoneCliente)}
+                      disabled={!phoneCliente}
+                      className={`w-full p-3 rounded-xl border flex items-center justify-between text-left transition-all ${
+                        phoneCliente
+                          ? 'bg-emerald-50/80 border-emerald-200 hover:bg-emerald-100/80 text-emerald-950 cursor-pointer shadow-xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 font-bold text-xs">
+                          👤
+                        </div>
+                        <div>
+                          <span className="block text-xs font-bold text-slate-800">
+                            Enviar para o Cliente
+                          </span>
+                          <span className="block text-[11px] font-mono text-slate-500">
+                            {cli?.nomeFantasia || 'Cliente'} {cli?.telefone ? `(${cli.telefone})` : '• (Sem telefone)'}
+                          </span>
+                        </div>
+                      </div>
+                      <Send className="w-4 h-4 text-emerald-600 shrink-0" />
+                    </button>
+
+                    {/* Send to Supplier */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenWhatsApp(phoneFornecedor)}
+                      disabled={!phoneFornecedor}
+                      className={`w-full p-3 rounded-xl border flex items-center justify-between text-left transition-all ${
+                        phoneFornecedor
+                          ? 'bg-blue-50/80 border-blue-200 hover:bg-blue-100/80 text-blue-950 cursor-pointer shadow-xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 font-bold text-xs">
+                          🏢
+                        </div>
+                        <div>
+                          <span className="block text-xs font-bold text-slate-800">
+                            Enviar para o Fornecedor (Fábrica)
+                          </span>
+                          <span className="block text-[11px] font-mono text-slate-500">
+                            {rep?.nomeFantasia || 'Representada'} {rep?.telefone ? `(${rep.telefone})` : '• (Sem telefone)'}
+                          </span>
+                        </div>
+                      </div>
+                      <Send className="w-4 h-4 text-blue-600 shrink-0" />
+                    </button>
+                  </div>
+
+                  {/* Preview Text */}
+                  <div className="space-y-1.5 pt-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-mono uppercase text-slate-500 font-bold">
+                        Prévia da Mensagem Formada
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(messageText);
+                          alert('Texto da mensagem copiado para a área de transferência!');
+                        }}
+                        className="text-[11px] font-mono font-bold text-emerald-700 hover:underline cursor-pointer flex items-center gap-1"
+                      >
+                        📋 Copiar Texto
+                      </button>
+                    </div>
+                    <textarea
+                      rows={9}
+                      readOnly
+                      value={messageText}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono text-slate-800 leading-relaxed resize-none focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="p-3.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setWhatsappModalPedido(null)}
+                    className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                  >
+                    Fechar
+                  </button>
                 </div>
               </motion.div>
             </div>

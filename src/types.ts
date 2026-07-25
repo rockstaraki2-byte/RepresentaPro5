@@ -29,7 +29,7 @@ export interface Cliente {
   telefone: string;
   email: string;
   contato: string;
-  tipoFaturamento?: 'Nota Fiscal' | 'Notinha'; // Opção de Faturamento (Nota Fiscal x Notinha)
+  tipoFaturamento?: 'Nf 100%' | 'Nf 50%' | 'Nf 0%' | 'Nf pauta' | 'Nota Fiscal' | 'Notinha' | string; // Opção de Faturamento
   empresaRepresentacaoId?: string; // Multi-tenant link
 }
 
@@ -54,7 +54,8 @@ export interface Pedido {
   dataPedido: string; // YYYY-MM-DD
   itens: OrderItem[];
   valorSubtotal?: number; // Soma do valor total dos produtos
-  tipoFaturamento?: 'Nota Fiscal' | 'Notinha'; // Faturamento com ou sem Nota Fiscal
+  tipoFaturamento?: 'Nf 100%' | 'Nf 50%' | 'Nf 0%' | 'Nf pauta' | 'Nota Fiscal' | 'Notinha' | string; // Faturamento com ou sem Nota Fiscal
+  percentualNfPauta?: number; // % Mínima de venda por nota quando faturamento é Nf pauta
   opcaoFrete?: 'percentual' | 'fixo' | 'manual' | 'nenhum'; // Método de cálculo
   tipoFrete?: 'FOB' | 'CIF' | 'Sem Frete'; // Modalidade de frete (Destinatário vs Emitente)
   valorFrete?: number; // Valor calculado em R$

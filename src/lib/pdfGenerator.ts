@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Pedido, Cliente, Representada } from '../types';
-import { formatarMoeda, formatarData, calcularParcelas } from '../utils';
+import { formatarMoeda, formatarData, calcularParcelas, formatarTipoFaturamento } from '../utils';
 
 /**
  * Generates a clean, professional vector-based PDF for a single sales order.
@@ -89,7 +89,8 @@ export function gerarPedidoPDF(
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  const fatTxt = (pedido.tipoFaturamento || cliente?.tipoFaturamento) === 'Notinha' ? 'Notinha' : 'Nota Fiscal';
+  const fatRaw = pedido.tipoFaturamento || cliente?.tipoFaturamento;
+  const fatTxt = formatarTipoFaturamento(fatRaw, pedido.percentualNfPauta);
   const freteTxt = pedido.opcaoFrete && pedido.opcaoFrete !== 'nenhum' 
     ? `${pedido.tipoFrete || 'FOB'} (${pedido.valorFrete ? formatarMoeda(pedido.valorFrete) : 'R$ 0,00'})` 
     : 'Sem Frete';
