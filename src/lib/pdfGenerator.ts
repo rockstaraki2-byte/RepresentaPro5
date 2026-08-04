@@ -148,33 +148,68 @@ export function gerarPedidoPDF(
 
   // Table Body
   (pedido.itens || []).forEach((item, index) => {
-    if (index % 2 === 1) {
-      doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
-      doc.rect(15, y, 180, 8, 'F');
-    }
-    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-    doc.line(15, y + 8, 195, y + 8);
-
-    doc.setFontSize(8);
-    // Safe truncation to prevent overlapping with next columns
     let fullDesc = '';
     if (item.codigo) fullDesc += `[${item.codigo}] `;
     fullDesc += item.descricao;
     if (item.cor) fullDesc += ` | Cor: ${item.cor}`;
     if (item.variacao) fullDesc += ` | Var: ${item.variacao}`;
-    const displayDesc = fullDesc.length > 55 ? fullDesc.substring(0, 52) + '...' : fullDesc;
-    doc.text(displayDesc, 20, y + 5.5);
-    doc.text(String(item.quantidade), 120, y + 5.5, { align: 'center' });
-    doc.text(formatarMoeda(item.precoUnitario), 150, y + 5.5, { align: 'right' });
-    doc.text(formatarMoeda(item.totalItem), 185, y + 5.5, { align: 'right' });
 
-    y += 8;
+    const splitDesc = doc.splitTextToSize(fullDesc, 95);
+    const lineCount = splitDesc.length;
+    const rowHeight = lineCount === 1 ? 8 : 8 + (lineCount - 1) * 3.5;
+
+    // Check pagination
+    if (y + rowHeight > 270) {
+      doc.addPage();
+      y = 15;
+
+      // Re-draw table header
+      doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+      doc.rect(15, y, 180, 8, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Descrição do Produto', 20, y + 5.5);
+      doc.text('Quant.', 120, y + 5.5, { align: 'center' });
+      doc.text('Preço Unit.', 150, y + 5.5, { align: 'right' });
+      doc.text('Total Item', 185, y + 5.5, { align: 'right' });
+
+      y += 8;
+    }
+
+    if (index % 2 === 1) {
+      doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
+      doc.rect(15, y, 180, rowHeight, 'F');
+    }
+    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+    doc.line(15, y + rowHeight, 195, y + rowHeight);
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+
+    // Draw description lines
+    for (let i = 0; i < lineCount; i++) {
+      doc.text(splitDesc[i], 20, y + 4.5 + (i * 3.5));
+    }
+
+    const verticalCenterOffset = y + (rowHeight / 2) + 1.2;
+    doc.text(String(item.quantidade), 120, verticalCenterOffset, { align: 'center' });
+    doc.text(formatarMoeda(item.precoUnitario), 150, verticalCenterOffset, { align: 'right' });
+    doc.text(formatarMoeda(item.totalItem), 185, verticalCenterOffset, { align: 'right' });
+
+    y += rowHeight;
   });
 
   y += 6;
 
   // Condições de Pagamento se houver
   if (pedido.condicoesPagamento) {
+    if (y > 240) {
+      doc.addPage();
+      y = 15;
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.text('Condições de Pagamento:', 15, y);
@@ -221,6 +256,10 @@ export function gerarPedidoPDF(
 
   // Observações se houver
   if (pedido.observacoes) {
+    if (y > 240) {
+      doc.addPage();
+      y = 15;
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.text('Observações de Faturamento:', 15, y);
@@ -234,6 +273,10 @@ export function gerarPedidoPDF(
   y += 5;
 
   // Total Summary Panel
+  if (y > 240) {
+    doc.addPage();
+    y = 15;
+  }
   const temFrete = Boolean(pedido.valorFrete && pedido.valorFrete > 0);
   const panelHeight = temFrete ? 32 : 24;
   const subtotalProd = pedido.valorSubtotal || (temFrete ? (pedido.valorTotal - (pedido.valorFrete || 0)) : pedido.valorTotal);

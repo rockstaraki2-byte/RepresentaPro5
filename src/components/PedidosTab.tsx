@@ -8,7 +8,7 @@ import CatalogViewerModal from './CatalogViewerModal';
 import { getPdfFromIndexedDB } from '../lib/pdfStorage';
 
 interface SearchableSelectProps {
-  options: { id: string; label: string; sublabel?: string }[];
+  options: { id: string; label: string; sublabel?: string; obs?: string; searchKeys?: string[] }[];
   value: string;
   onChange: (id: string) => void;
   placeholder: string;
@@ -33,10 +33,14 @@ function SearchableSelect({
     }
   }, [isOpen, selectedOption]);
 
-  const filtered = options.filter(o => 
-    o.label.toLowerCase().includes(search.toLowerCase()) ||
-    (o.sublabel && o.sublabel.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filtered = options.filter(o => {
+    const s = search.toLowerCase();
+    const matchesLabel = o.label.toLowerCase().includes(s);
+    const matchesSublabel = o.sublabel ? o.sublabel.toLowerCase().includes(s) : false;
+    const matchesObs = o.obs ? o.obs.toLowerCase().includes(s) : false;
+    const matchesKeys = o.searchKeys ? o.searchKeys.some(k => k.toLowerCase().includes(s)) : false;
+    return matchesLabel || matchesSublabel || matchesObs || matchesKeys;
+  });
 
   return (
     <div className="relative w-full">
@@ -82,6 +86,7 @@ function SearchableSelect({
                 >
                   <div className="font-bold">{opt.label}</div>
                   {opt.sublabel && <div className="text-[10px] text-slate-400 font-normal mt-0.5">{opt.sublabel}</div>}
+                  {opt.obs && <div className="text-[10px] text-emerald-600 font-medium font-mono mt-0.5">💡 {opt.obs}</div>}
                 </li>
               ))
             )}
@@ -1366,7 +1371,9 @@ ${empresaNome}`;
                             options={produtosFiltradosRepresentada.map(p => ({
                               id: p.id,
                               label: p.nome,
-                              sublabel: `Cód: ${p.codigo} | Sugerido: ${formatarMoeda(p.precoVenda)} / ${p.unidade}`
+                              sublabel: `Cód: ${p.codigo} | Sugerido: ${formatarMoeda(p.precoVenda)} / ${p.unidade}`,
+                              obs: p.descricao,
+                              searchKeys: [p.codigo || '', p.descricao || '', p.nome || '']
                             }))}
                             value={selectedProdutoId}
                             onChange={(id) => {
@@ -1380,7 +1387,7 @@ ${empresaNome}`;
                                 setItemVariacao(prod.variacao || '');
                               }
                             }}
-                            placeholder={representadaId ? "Buscar produto..." : "Selecione representada primeiro"}
+                            placeholder={representadaId ? "Buscar por código, descrição ou indicação..." : "Selecione representada primeiro"}
                             disabled={!representadaId}
                           />
                         </div>
