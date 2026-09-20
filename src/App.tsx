@@ -192,7 +192,7 @@ export default function App() {
           navigator.serviceWorker.ready.then((reg) => {
             reg.showNotification(title, {
               body: message,
-              icon: '/manifest.json',
+              icon: '/representapro-icon.svg',
               tag: newNotif.id,
             });
           });
@@ -696,7 +696,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white font-sans">
+      <div className="min-h-screen bg-[#071F38] flex flex-col items-center justify-center p-6 text-white font-sans">
         <div className="flex flex-col items-center gap-4 text-center max-w-sm">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
           <div>
@@ -723,42 +723,21 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
-      {activeEmpresa?.corPrimaria && (
-        <style dangerouslySetInnerHTML={{ __html: `
-          :root {
-            --color-emerald-50: ${activeEmpresa.corPrimaria}10;
-            --color-emerald-100: ${activeEmpresa.corPrimaria}20;
-            --color-emerald-200: ${activeEmpresa.corPrimaria}30;
-            --color-emerald-300: ${activeEmpresa.corPrimaria}40;
-            --color-emerald-400: ${activeEmpresa.corPrimaria}60;
-            --color-emerald-500: ${activeEmpresa.corPrimaria}80;
-            --color-emerald-600: ${activeEmpresa.corPrimaria};
-            --color-emerald-700: ${activeEmpresa.corPrimaria}E0;
-            --color-emerald-800: ${activeEmpresa.corPrimaria}C0;
-            --color-emerald-900: ${activeEmpresa.corPrimaria}A0;
-            --color-emerald-950: ${activeEmpresa.corPrimaria}80;
-          }
-        `}} />
-      )}
+    <div className="min-h-screen bg-[#F6F8FB] text-slate-800 flex flex-col font-sans">
       
       {/* Top Banner & Header */}
-      <header className="bg-white border-b border-slate-200 py-3 sm:py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-sm">
+      <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 border-t-4 border-t-[#FD9619] py-3 sm:py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           
           <div className="flex items-center gap-3">
-            {activeEmpresa?.logoUrl ? (
-              <div className="w-12 h-12 bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center p-1.5 overflow-hidden shrink-0">
-                <img src={activeEmpresa.logoUrl} alt="Logo" className="object-contain max-w-full max-h-full" referrerPolicy="no-referrer" />
-              </div>
-            ) : (
-              <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-sm shadow-emerald-200">
-                <Briefcase className="w-5 h-5" />
-              </div>
-            )}
+            <div className="w-12 h-12 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center p-1 overflow-hidden shrink-0">
+              <img src="/representapro-icon.svg" alt="RepresentaPRO" className="w-full h-full object-contain" />
+            </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="font-serif font-extrabold text-lg text-slate-900 tracking-tight">RepresentaPRO</h1>
+                <h1 className="font-sans font-extrabold text-xl tracking-[-0.04em] leading-none">
+                  <span className="text-[#0B3259]">Representa</span><span className="text-[#FD9619]">PRO</span>
+                </h1>
                 <span className="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-extrabold shadow-xs">
                   🏢 {activeEmpresaId === 'all' ? 'Todas as Representações' : activeEmpresa?.nomeFantasia}
                 </span>
@@ -959,7 +938,7 @@ export default function App() {
               onClick={() => { setActiveTab('dashboard'); setActivePedidoToEdit(null); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'dashboard' 
-                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -975,7 +954,7 @@ export default function App() {
               onClick={() => { setActiveTab('representadas'); setActivePedidoToEdit(null); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'representadas' 
-                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -991,7 +970,7 @@ export default function App() {
               onClick={() => { setActiveTab('clientes'); setActivePedidoToEdit(null); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'clientes' 
-                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -1007,7 +986,7 @@ export default function App() {
               onClick={() => { setActiveTab('produtos'); setActivePedidoToEdit(null); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'produtos' 
-                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -1022,7 +1001,7 @@ export default function App() {
             onClick={() => { setActiveTab('pedidos'); }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'pedidos' 
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30' 
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
@@ -1037,7 +1016,7 @@ export default function App() {
               onClick={() => { setActiveTab('financeiro'); setActivePedidoToEdit(null); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'financeiro' 
-                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100' 
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -1053,7 +1032,7 @@ export default function App() {
               onClick={() => { setActiveTab('admin'); setActivePedidoToEdit(null); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ml-auto ${
                 activeTab === 'admin' 
-                  ? 'bg-slate-800 text-white shadow-sm' 
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30' 
                   : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-dashed border-slate-200'
               }`}
             >
@@ -1177,8 +1156,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-slate-400 font-mono">
           <span>&copy; {new Date().getFullYear()} Desenvolvido por Raul Soares. Todos os direitos reservados.</span>
           <div className="flex items-center gap-1.5">
-            <a href="https://wa.me/5532999098468" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 transition-colors font-bold bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-emerald-600 shrink-0"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.5-5.729-1.452L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.413 9.863-9.843.002-2.63-1.023-5.101-2.886-6.968C16.583 1.94 14.113.916 11.49.916c-5.434 0-9.858 4.414-9.861 9.845-.001 1.716.452 3.39 1.31 4.869L1.91 22.12l6.737-1.766zm10.37-4.144c-.3-.15-1.771-.875-2.046-.975-.276-.1-.477-.15-.677.15-.2.3-.777.975-.951 1.175-.174.2-.35.225-.65.075-1.041-.521-2.071-1.302-2.851-1.997-.6-.518-1.07-1.116-1.153-1.29-.1-.3-.01-.45.09-.599.09-.15.2-.3.3-.45.1-.15.15-.25.225-.4.075-.15.038-.3-.019-.45-.056-.15-.477-1.15-.653-1.575-.171-.413-.345-.356-.477-.356-.124-.002-.266-.002-.409-.002-.143 0-.377.054-.575.273-.2.22-.765.748-.765 1.822 0 1.074.78 2.114.89 2.263.11.15 1.516 2.315 3.673 3.243 1.171.504 1.882.68 2.538.74.656.06 1.252-.027 1.724-.097.525-.078 1.593-.65 1.819-1.275.225-.625.225-1.15.157-1.275-.069-.125-.262-.2-.562-.35z"/></svg>
+            <a href="https://wa.me/5532999098468" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-green-700 hover:text-green-800 transition-colors font-bold bg-green-50 px-3 py-1 rounded-lg border border-green-100">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-green-600 shrink-0"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.5-5.729-1.452L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.413 9.863-9.843.002-2.63-1.023-5.101-2.886-6.968C16.583 1.94 14.113.916 11.49.916c-5.434 0-9.858 4.414-9.861 9.845-.001 1.716.452 3.39 1.31 4.869L1.91 22.12l6.737-1.766zm10.37-4.144c-.3-.15-1.771-.875-2.046-.975-.276-.1-.477-.15-.677.15-.2.3-.777.975-.951 1.175-.174.2-.35.225-.65.075-1.041-.521-2.071-1.302-2.851-1.997-.6-.518-1.07-1.116-1.153-1.29-.1-.3-.01-.45.09-.599.09-.15.2-.3.3-.45.1-.15.15-.25.225-.4.075-.15.038-.3-.019-.45-.056-.15-.477-1.15-.653-1.575-.171-.413-.345-.356-.477-.356-.124-.002-.266-.002-.409-.002-.143 0-.377.054-.575.273-.2.22-.765.748-.765 1.822 0 1.074.78 2.114.89 2.263.11.15 1.516 2.315 3.673 3.243 1.171.504 1.882.68 2.538.74.656.06 1.252-.027 1.724-.097.525-.078 1.593-.65 1.819-1.275.225-.625.225-1.15.157-1.275-.069-.125-.262-.2-.562-.35z"/></svg>
               <span>32 99909-8468</span>
             </a>
             <span className="hidden sm:inline-block text-slate-300 mx-2">|</span>

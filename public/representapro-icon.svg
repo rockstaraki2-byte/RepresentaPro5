@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RepresentaPRO">
+  <rect width="512" height="512" rx="96" fill="#ffffff"/>
+  <g fill="#0B3259">
+    <circle cx="256" cy="256" r="174"/>
+    <rect x="226" y="35" width="60" height="82" rx="12"/>
+    <rect x="226" y="395" width="60" height="82" rx="12"/>
+    <rect x="395" y="226" width="82" height="60" rx="12"/>
+    <rect x="35" y="226" width="82" height="60" rx="12"/>
+    <rect x="371" y="74" width="60" height="82" rx="12" transform="rotate(45 401 115)"/>
+    <rect x="81" y="356" width="60" height="82" rx="12" transform="rotate(45 111 397)"/>
+    <rect x="356" y="371" width="82" height="60" rx="12" transform="rotate(45 397 401)"/>
+    <rect x="74" y="81" width="82" height="60" rx="12" transform="rotate(45 115 111)"/>
+  </g>
+  <circle cx="256" cy="256" r="132" fill="#ffffff"/>
+  <g fill="#FD9619">
+    <circle cx="256" cy="186" r="29"/>
+    <path d="M207 255c0-34 22-57 49-57s49 23 49 57v11h-98z"/>
+    <circle cx="184" cy="294" r="23"/>
+    <path d="M146 350c0-27 17-46 38-46s38 19 38 46v9h-76z"/>
+    <circle cx="328" cy="294" r="23"/>
+    <path d="M290 350c0-27 17-46 38-46s38 19 38 46v9h-76z"/>
+  </g>
+  <g fill="none" stroke="#FD9619" stroke-width="14" stroke-linecap="round">
+    <path d="M202 178c-23 13-39 34-45 59"/>
+    <path d="M310 178c23 13 39 34 45 59"/>
+    <path d="M221 330c22 11 48 11 70 0"/>
+  </g>
+</svg>

@@ -782,16 +782,16 @@ export default function FinanceiroTab({
                   >
                     <defs>
                       <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.01}/>
+                        <stop offset="5%" stopColor="#FD9619" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#FD9619" stopOpacity={0.01}/>
                       </linearGradient>
                       <linearGradient id="colorDespesa" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#ef4444" stopOpacity={0.15}/>
                         <stop offset="95%" stopColor="#ef4444" stopOpacity={0.01}/>
                       </linearGradient>
                       <linearGradient id="colorLiquido" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.01}/>
+                        <stop offset="5%" stopColor="#0B3259" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#0B3259" stopOpacity={0.01}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -827,9 +827,9 @@ export default function FinanceiroTab({
                       iconType="circle"
                       wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }}
                     />
-                    <Area type="monotone" dataKey="Receita (Comissão)" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorReceita)" />
+                    <Area type="monotone" dataKey="Receita (Comissão)" stroke="#FD9619" strokeWidth={2} fillOpacity={1} fill="url(#colorReceita)" />
                     <Area type="monotone" dataKey="Despesa (Repasse)" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorDespesa)" />
-                    <Area type="monotone" dataKey="Fluxo Líquido" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorLiquido)" />
+                    <Area type="monotone" dataKey="Fluxo Líquido" stroke="#0B3259" strokeWidth={2.5} fillOpacity={1} fill="url(#colorLiquido)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -883,7 +883,7 @@ export default function FinanceiroTab({
                       iconType="circle"
                       wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }}
                     />
-                    <Bar dataKey="Receita (Comissão)" fill="#10b981" radius={[3, 3, 0, 0]} name="Receita" barSize={12} />
+                    <Bar dataKey="Receita (Comissão)" fill="#FD9619" radius={[3, 3, 0, 0]} name="Receita" barSize={12} />
                     <Bar dataKey="Despesa (Repasse)" fill="#ef4444" radius={[3, 3, 0, 0]} name="Repasse" barSize={12} />
                   </BarChart>
                 </ResponsiveContainer>

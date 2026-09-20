@@ -1,6 +1,46 @@
 @import "tailwindcss";
+
 @theme {
-  --font-sans: "Arial", "Helvetica Neue", Helvetica, sans-serif;
-  --font-serif: "Georgia", "Times New Roman", serif;
-  --font-mono: "Courier New", Courier, monospace;
+  --font-sans: "Segoe UI Variable", "Segoe UI", Arial, Helvetica, sans-serif;
+  --font-serif: "Segoe UI Variable", "Segoe UI", Arial, Helvetica, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* RepresentaPRO identity: all former emerald accent utilities now use the logo orange. */
+  --color-emerald-50: #FFF8ED;
+  --color-emerald-100: #FEEED6;
+  --color-emerald-200: #FDD9AA;
+  --color-emerald-300: #FCBE72;
+  --color-emerald-400: #FDA23C;
+  --color-emerald-500: #FD9619;
+  --color-emerald-600: #FD9619;
+  --color-emerald-700: #D87508;
+  --color-emerald-800: #A9570B;
+  --color-emerald-900: #7B4011;
+  --color-emerald-950: #442005;
+
+  --color-brand-navy: #0B3259;
+  --color-brand-orange: #FD9619;
+}
+
+:root {
+  --representapro-navy: #0B3259;
+  --representapro-orange: #FD9619;
+  --representapro-bg: #F6F8FB;
+}
+
+html {
+  background: var(--representapro-bg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top right, rgba(253, 150, 25, 0.06), transparent 30rem),
+    var(--representapro-bg);
+  color: #1e293b;
+}
+
+::selection {
+  background: rgba(253, 150, 25, 0.22);
 }

@@ -1,8 +1,9 @@
-const CACHE_NAME = 'representapro-cache-v2';
+const CACHE_NAME = 'representapro-cache-v3-brand';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/representapro-icon.svg'
 ];
 
 // Installs the service worker and pre-caches the core shells/assets

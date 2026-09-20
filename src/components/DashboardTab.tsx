@@ -523,8 +523,8 @@ export default function DashboardTab({
                     iconType="circle"
                     wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }}
                   />
-                  <Bar dataKey="Vendas" fill="#10b981" radius={[4, 4, 0, 0]} name="Vendas Realizadas" />
-                  <Bar dataKey="Meta" fill="#e2e8f0" radius={[4, 4, 0, 0]} name="Meta Estabelecida" />
+                  <Bar dataKey="Vendas" fill="#0B3259" radius={[4, 4, 0, 0]} name="Vendas Realizadas" />
+                  <Bar dataKey="Meta" fill="#FD9619" fillOpacity={0.72} radius={[4, 4, 0, 0]} name="Meta Estabelecida" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -633,7 +633,7 @@ export default function DashboardTab({
                           initial={{ width: 0 }}
                           animate={{ width: `${percentVal}%` }}
                           transition={{ duration: 0.8, delay: index * 0.1 }}
-                          className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-emerald-600/85 to-emerald-500/90 rounded-r"
+                          className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-[#0B3259] to-[#164F7A] rounded-r"
                         />
                         <span className="relative z-10 text-[10px] font-mono text-slate-700 font-bold">
                           {percentVal.toFixed(0)}% do volume máximo

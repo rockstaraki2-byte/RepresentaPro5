@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Usuario, EmpresaRepresentacao } from '../types';
-import { Briefcase, Lock, User, AlertCircle, ChevronRight } from 'lucide-react';
+import { Lock, User, AlertCircle, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface LoginScreenProps {
@@ -68,19 +68,19 @@ export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: Logi
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-[#071F38] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
       
       {/* Decorative Background Elements */}
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-950/30 via-slate-950 to-slate-950 -z-10" />
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-3xl -z-10" />
+      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#174F7F]/40 via-[#071F38] to-[#051526] -z-10" />
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-[#FD9619]/10 rounded-full blur-3xl -z-10" />
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center space-y-2">
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="mx-auto h-12 w-12 rounded-2xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-900/30 text-white"
+          className="mx-auto h-16 w-16 rounded-2xl bg-white flex items-center justify-center shadow-xl shadow-black/25 p-1.5 ring-1 ring-white/10"
         >
-          <Briefcase className="w-6 h-6" />
+          <img src="/representapro-icon.svg" alt="RepresentaPRO" className="w-full h-full object-contain" />
         </motion.div>
         
         <motion.div
@@ -88,7 +88,7 @@ export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: Logi
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <h2 className="font-serif font-extrabold text-2xl text-white tracking-tight">RepresentaPRO</h2>
+          <h2 className="font-sans font-extrabold text-3xl tracking-[-0.04em]"><span className="text-white">Representa</span><span className="text-[#FD9619]">PRO</span></h2>
           <p className="text-xs text-slate-400 mt-1">Plataforma de Gestão Comercial e Multiempresas</p>
         </motion.div>
       </div>
@@ -98,7 +98,7 @@ export default function LoginScreen({ usuarios, empresas, onLoginSuccess }: Logi
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-slate-950/80 backdrop-blur-md py-8 px-6 sm:px-10 rounded-3xl border border-slate-800 shadow-2xl space-y-6"
+          className="bg-[#061A2E]/90 backdrop-blur-md py-8 px-6 sm:px-10 rounded-3xl border border-white/10 shadow-2xl space-y-6"
         >
           {error && (
             <div className="p-3 bg-red-950/50 border border-red-900 text-red-400 rounded-xl text-xs flex items-start gap-2 animate-pulse">
