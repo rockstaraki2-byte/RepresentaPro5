@@ -32,7 +32,16 @@ import {
   SEED_METAS,
   SEED_PRODUTOS,
   SEED_EMPRESAS,
-  SEED_USUARIOS
+  SEED_USUARIOS,
+  DEMO_EMPRESA_ID,
+  DEMO_REPRESENTADAS,
+  DEMO_CLIENTES,
+  DEMO_PEDIDOS,
+  DEMO_METAS,
+  DEMO_PRODUTOS,
+  DEMO_EMPRESAS,
+  DEMO_USUARIOS,
+  DEMO_NOTIFICACOES
 } from './data';
 
 import { 
@@ -72,31 +81,40 @@ import AdminTab from './components/AdminTab';
 import LoginScreen from './components/LoginScreen';
 
 export default function App() {
+  const isDemoMode =
+    typeof window !== 'undefined' &&
+    ['1', 'true'].includes(new URLSearchParams(window.location.search).get('demo') || '');
+
   // --- Core Persistent States ---
   const [representadas, setRepresentadas] = useState<Representada[]>(() => {
+    if (isDemoMode) return DEMO_REPRESENTADAS;
     const saved = localStorage.getItem('rep_representadas');
     const items = saved ? JSON.parse(saved) : SEED_REPRESENTADAS;
     return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
   });
 
   const [clientes, setClientes] = useState<Cliente[]>(() => {
+    if (isDemoMode) return DEMO_CLIENTES;
     const saved = localStorage.getItem('rep_clientes');
     const items = saved ? JSON.parse(saved) : SEED_CLIENTES;
     return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
   });
 
   const [pedidos, setPedidos] = useState<Pedido[]>(() => {
+    if (isDemoMode) return DEMO_PEDIDOS;
     const saved = localStorage.getItem('rep_pedidos');
     const items = saved ? JSON.parse(saved) : SEED_PEDIDOS;
     return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
   });
 
   const [meta, setMeta] = useState<MetaVendas>(() => {
+    if (isDemoMode) return DEMO_METAS;
     const saved = localStorage.getItem('rep_meta');
     return saved ? JSON.parse(saved) : SEED_METAS;
   });
 
   const [produtos, setProdutos] = useState<Produto[]>(() => {
+    if (isDemoMode) return DEMO_PRODUTOS;
     const saved = localStorage.getItem('rep_produtos');
     const items = saved ? JSON.parse(saved) : SEED_PRODUTOS;
     return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
@@ -104,11 +122,13 @@ export default function App() {
 
   // --- Multi-Company & User Access Management States ---
   const [empresas, setEmpresas] = useState<EmpresaRepresentacao[]>(() => {
+    if (isDemoMode) return DEMO_EMPRESAS;
     const saved = localStorage.getItem('rep_empresas');
     return saved ? JSON.parse(saved) : SEED_EMPRESAS;
   });
 
   const [activeEmpresaId, setActiveEmpresaId] = useState<string>(() => {
+    if (isDemoMode) return DEMO_EMPRESA_ID;
     const saved = localStorage.getItem('rep_active_empresa_id');
     if (saved) return saved;
     const defaultEmp = SEED_EMPRESAS.find(e => e.isDefault);
@@ -116,6 +136,7 @@ export default function App() {
   });
 
   const [usuarios, setUsuarios] = useState<Usuario[]>(() => {
+    if (isDemoMode) return DEMO_USUARIOS;
     const saved = localStorage.getItem('rep_usuarios');
     const parsed = saved ? JSON.parse(saved) : SEED_USUARIOS;
     const unique = new Map();
@@ -126,11 +147,13 @@ export default function App() {
   });
 
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
+    if (isDemoMode) return 'demo-admin';
     const saved = localStorage.getItem('rep_current_user_id');
     return saved || 'usr-1';
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (isDemoMode) return true;
     const saved = localStorage.getItem('rep_is_authenticated');
     return saved === 'true';
   });
@@ -154,6 +177,7 @@ export default function App() {
   }
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    if (isDemoMode) return DEMO_NOTIFICACOES;
     const saved = localStorage.getItem('rep_notifications');
     return saved ? JSON.parse(saved) : [];
   });
@@ -164,6 +188,7 @@ export default function App() {
   });
 
   useEffect(() => {
+    if (isDemoMode) return;
     try { localStorage.setItem('rep_notifications', JSON.stringify(notifications)); } catch(e) { console.error('rep_notifications', e); }
   }, [notifications]);
 
@@ -220,6 +245,7 @@ export default function App() {
 
   // --- LocalStorage Synchronization ---
   useEffect(() => {
+    if (isDemoMode) return;
     try {
       const sanitized = representadas.map(rep => {
         if (rep.catalogoUrl && rep.catalogoUrl.startsWith('data:') && rep.catalogoUrl.length > 500000) {
@@ -232,42 +258,55 @@ export default function App() {
   }, [representadas]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     try { localStorage.setItem('rep_clientes', JSON.stringify(clientes)); } catch(e) { console.error('rep_clientes', e); }
   }, [clientes]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     try { localStorage.setItem('rep_pedidos', JSON.stringify(pedidos)); } catch(e) { console.error('rep_pedidos', e); }
   }, [pedidos]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     try { localStorage.setItem('rep_meta', JSON.stringify(meta)); } catch(e) { console.error('rep_meta', e); }
   }, [meta]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     try { localStorage.setItem('rep_produtos', JSON.stringify(produtos)); } catch(e) { console.error('rep_produtos', e); }
   }, [produtos]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     try { localStorage.setItem('rep_empresas', JSON.stringify(empresas)); } catch(e) { console.error('rep_empresas', e); }
   }, [empresas]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     localStorage.setItem('rep_active_empresa_id', activeEmpresaId);
   }, [activeEmpresaId]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     try { try { localStorage.setItem('rep_usuarios', JSON.stringify(usuarios)); } catch(e) { console.error('rep_usuarios', e); } } catch(e) { console.error("usuarios", e); }
   }, [usuarios]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     localStorage.setItem('rep_current_user_id', currentUserId);
   }, [currentUserId]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     localStorage.setItem('rep_is_authenticated', isAuthenticated ? 'true' : 'false');
   }, [isAuthenticated]);
 
   useEffect(() => {
+    if (isDemoMode) {
+      setLoading(false);
+      return;
+    }
     async function initFirestoreData() {
       try {
         await seedDatabaseIfNeeded();
@@ -311,7 +350,7 @@ export default function App() {
       }
     }
     initFirestoreData();
-  }, []);
+  }, [isDemoMode]);
 
   // --- Real-time Firestore Subscription with Push Notifications ---
   const isFirstSnapshot = React.useRef(true);
@@ -339,7 +378,7 @@ export default function App() {
   }, [activeEmpresaId]);
 
   useEffect(() => {
-    if (loading) return;
+    if (isDemoMode || loading) return;
 
     isFirstSnapshot.current = true;
 
@@ -420,7 +459,7 @@ export default function App() {
     }));
 
     return () => unsubs.forEach(unsub => unsub());
-  }, [loading]);
+  }, [loading, isDemoMode]);
 
   // --- Active Selections and Helpers ---
   const activeEmpresa = empresas.find(e => e.id === activeEmpresaId) || empresas[0];
@@ -476,7 +515,7 @@ export default function App() {
     const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
     const withEmp = { ...rep, empresaRepresentacaoId: targetEmpId };
     setRepresentadas([...representadas, withEmp]);
-    await saveRepresentada(withEmp);
+    if (!isDemoMode) await saveRepresentada(withEmp);
   };
   const handleEditRepresentada = async (rep: Representada) => {
     const existing = representadas.find(r => r.id === rep.id);
@@ -485,11 +524,11 @@ export default function App() {
       updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
     }
     setRepresentadas(representadas.map(r => r.id === rep.id ? updated : r));
-    await saveRepresentada(updated);
+    if (!isDemoMode) await saveRepresentada(updated);
   };
   const handleDeleteRepresentada = async (id: string) => {
     setRepresentadas(representadas.filter(r => r.id !== id));
-    await deleteRepresentada(id);
+    if (!isDemoMode) await deleteRepresentada(id);
   };
 
   // Clientes
@@ -497,7 +536,7 @@ export default function App() {
     const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
     const withEmp = { ...cli, empresaRepresentacaoId: targetEmpId };
     setClientes([...clientes, withEmp]);
-    await saveCliente(withEmp);
+    if (!isDemoMode) await saveCliente(withEmp);
   };
   const handleEditCliente = async (cli: Cliente) => {
     const existing = clientes.find(c => c.id === cli.id);
@@ -506,11 +545,11 @@ export default function App() {
       updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
     }
     setClientes(clientes.map(c => c.id === cli.id ? updated : c));
-    await saveCliente(updated);
+    if (!isDemoMode) await saveCliente(updated);
   };
   const handleDeleteCliente = async (id: string) => {
     setClientes(clientes.filter(c => c.id !== id));
-    await deleteCliente(id);
+    if (!isDemoMode) await deleteCliente(id);
   };
 
   // Pedidos
@@ -518,7 +557,7 @@ export default function App() {
     const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
     const withEmp = { ...pedido, empresaRepresentacaoId: targetEmpId, createdByUserId: currentUser?.id };
     setPedidos([withEmp, ...pedidos]);
-    await savePedido(withEmp);
+    if (!isDemoMode) await savePedido(withEmp);
   };
   const handleEditPedido = async (pedido: Pedido) => {
     const existing = pedidos.find(p => p.id === pedido.id);
@@ -530,11 +569,11 @@ export default function App() {
       updated.createdByUserId = currentUser?.id;
     }
     setPedidos(pedidos.map(p => p.id === pedido.id ? updated : p));
-    await savePedido(updated);
+    if (!isDemoMode) await savePedido(updated);
   };
   const handleDeletePedido = async (id: string) => {
     setPedidos(pedidos.filter(p => p.id !== id));
-    await deletePedido(id);
+    if (!isDemoMode) await deletePedido(id);
   };
 
   // Produtos
@@ -542,7 +581,7 @@ export default function App() {
     const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
     const withEmp = { ...prod, empresaRepresentacaoId: targetEmpId };
     setProdutos([...produtos, withEmp]);
-    await saveProduto(withEmp);
+    if (!isDemoMode) await saveProduto(withEmp);
   };
   const handleEditProduto = async (prod: Produto) => {
     const existing = produtos.find(p => p.id === prod.id);
@@ -551,11 +590,11 @@ export default function App() {
       updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
     }
     setProdutos(produtos.map(p => p.id === prod.id ? updated : p));
-    await saveProduto(updated);
+    if (!isDemoMode) await saveProduto(updated);
   };
   const handleDeleteProduto = async (id: string) => {
     setProdutos(produtos.filter(p => p.id !== id));
-    await deleteProduto(id);
+    if (!isDemoMode) await deleteProduto(id);
   };
 
   // Empresas de Representação (Razões Sociais)
@@ -566,7 +605,7 @@ export default function App() {
       return;
     }
     setEmpresas([...empresas, emp]);
-    await saveEmpresa(emp);
+    if (!isDemoMode) await saveEmpresa(emp);
   };
   const handleEditEmpresa = async (emp: EmpresaRepresentacao) => {
     const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
@@ -575,7 +614,7 @@ export default function App() {
       return;
     }
     setEmpresas(empresas.map(e => e.id === emp.id ? emp : e));
-    await saveEmpresa(emp);
+    if (!isDemoMode) await saveEmpresa(emp);
   };
   const handleDeleteEmpresa = async (id: string) => {
     const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
@@ -584,26 +623,26 @@ export default function App() {
       return;
     }
     setEmpresas(empresas.filter(e => e.id !== id));
-    await deleteEmpresa(id);
+    if (!isDemoMode) await deleteEmpresa(id);
   };
 
   // Usuários do Sistema
   const handleAddUsuario = async (usr: Usuario) => {
     setUsuarios([...usuarios, usr]);
-    await saveUsuario(usr);
+    if (!isDemoMode) await saveUsuario(usr);
   };
   const handleEditUsuario = async (usr: Usuario) => {
     setUsuarios(usuarios.map(u => u.id === usr.id ? usr : u));
-    await saveUsuario(usr);
+    if (!isDemoMode) await saveUsuario(usr);
   };
   const handleDeleteUsuario = async (id: string) => {
     setUsuarios(usuarios.filter(u => u.id !== id));
-    await deleteUsuario(id);
+    if (!isDemoMode) await deleteUsuario(id);
   };
 
   const handleSetMeta = async (newMeta: MetaVendas) => {
     setMeta(newMeta);
-    await saveMeta(newMeta);
+    if (!isDemoMode) await saveMeta(newMeta);
   };
 
   // Transition helper from dashboard view link
@@ -615,6 +654,10 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const handleSincronizarDados = async () => {
+    if (isDemoMode) {
+      alert('Modo demonstração: os dados são fictícios e não são sincronizados.');
+      return;
+    }
     if (isSyncing) return;
     setIsSyncing(true);
     try {
@@ -724,6 +767,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F6F8FB] text-slate-800 flex flex-col font-sans">
+      {isDemoMode && (
+        <div className="bg-amber-100 text-amber-900 border-b border-amber-200 text-[11px] font-extrabold text-center py-1.5 px-3 tracking-wide">
+          MODO DEMONSTRAÇÃO • dados fictícios • nenhuma alteração é enviada ao banco real
+        </div>
+      )}
       
       {/* Top Banner & Header */}
       <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 border-t-4 border-t-[#FD9619] py-3 sm:py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-sm">
@@ -760,7 +808,7 @@ export default function App() {
               <strong className="text-slate-800 font-extrabold">{filteredClientes.length} lojistas</strong>
             </div>
             
-            {isRaul && (
+            {isRaul && !isDemoMode && (
               <button
                 onClick={handleSincronizarDados}
                 disabled={isSyncing}
