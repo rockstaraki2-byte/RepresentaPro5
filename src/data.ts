@@ -611,3 +611,23 @@ export const DEMO_USUARIOS: Usuario[] = [
     senha: 'demo'
   }
 ];
+
+
+export const DEMO_NOTIFICACOES = [
+  {
+    id: 'demo-notif-1',
+    title: 'Meta mensal em alta',
+    message: 'O ambiente DEMO já alcançou 120% da meta mensal configurada.',
+    type: 'order' as const,
+    timestamp: '2026-09-21T09:20:00-03:00',
+    read: false
+  },
+  {
+    id: 'demo-notif-2',
+    title: 'Comissão liberada',
+    message: 'A comissão do pedido DEMO-1004 foi liberada para conferência.',
+    type: 'commission' as const,
+    timestamp: '2026-09-20T16:10:00-03:00',
+    read: false
+  }
+];
