@@ -7,6 +7,9 @@ import { gerarPedidoPDF, gerarResumoMensalPDF, gerarResumoPeriodoPDF } from '../
 import CatalogViewerModal from './CatalogViewerModal';
 import { getPdfFromIndexedDB } from '../lib/pdfStorage';
 
+const normalizeSearchText = (value: string) =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
 interface SearchableSelectProps {
   options: { id: string; label: string; sublabel?: string; obs?: string; searchKeys?: string[] }[];
   value: string;
@@ -34,11 +37,11 @@ function SearchableSelect({
   }, [isOpen, selectedOption]);
 
   const filtered = options.filter(o => {
-    const s = search.toLowerCase();
-    const matchesLabel = o.label.toLowerCase().includes(s);
-    const matchesSublabel = o.sublabel ? o.sublabel.toLowerCase().includes(s) : false;
-    const matchesObs = o.obs ? o.obs.toLowerCase().includes(s) : false;
-    const matchesKeys = o.searchKeys ? o.searchKeys.some(k => k.toLowerCase().includes(s)) : false;
+    const s = normalizeSearchText(search);
+    const matchesLabel = normalizeSearchText(o.label).includes(s);
+    const matchesSublabel = o.sublabel ? normalizeSearchText(o.sublabel).includes(s) : false;
+    const matchesObs = o.obs ? normalizeSearchText(o.obs).includes(s) : false;
+    const matchesKeys = o.searchKeys ? o.searchKeys.some(k => normalizeSearchText(k).includes(s)) : false;
     return matchesLabel || matchesSublabel || matchesObs || matchesKeys;
   });
 
@@ -1372,8 +1375,8 @@ ${empresaNome}`;
                               id: p.id,
                               label: p.nome,
                               sublabel: `Cód: ${p.codigo} | Sugerido: ${formatarMoeda(p.precoVenda)} / ${p.unidade}`,
-                              obs: p.descricao,
-                              searchKeys: [p.codigo || '', p.descricao || '', p.nome || '']
+                              obs: [p.descricao || '', p.apelidos?.length ? 'Apelidos: ' + p.apelidos.join(', ') : ''].filter(Boolean).join(' · '),
+                              searchKeys: [p.codigo || '', p.descricao || '', p.nome || '', ...(p.apelidos || [])]
                             }))}
                             value={selectedProdutoId}
                             onChange={(id) => {
@@ -1387,7 +1390,7 @@ ${empresaNome}`;
                                 setItemVariacao(prod.variacao || '');
                               }
                             }}
-                            placeholder={representadaId ? "Buscar por código, descrição ou indicação..." : "Selecione representada primeiro"}
+                            placeholder={representadaId ? "Buscar por código, nome ou apelido..." : "Selecione representada primeiro"}
                             disabled={!representadaId}
                           />
                         </div>

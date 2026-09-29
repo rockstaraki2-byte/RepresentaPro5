@@ -15,6 +15,22 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+const normalizeProductSearch = (value: string) =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+const parseProductAliases = (value: string): string[] => {
+  const seen = new Set<string>();
+  return value
+    .split(/[\n;]+/)
+    .map(alias => alias.trim())
+    .filter(alias => {
+      const normalized = normalizeProductSearch(alias);
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+};
+
 interface ProdutosTabProps {
   produtos: Produto[];
   representadas: Representada[];
@@ -48,6 +64,7 @@ export default function ProdutosTab({
     descricao: '',
     ativo: true,
   });
+  const [apelidosText, setApelidosText] = useState('');
 
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -62,11 +79,13 @@ export default function ProdutosTab({
       ativo: true,
     });
     setEditingId(null);
+    setApelidosText('');
     setValidationError(null);
   };
 
   const handleEditClick = (prod: Produto) => {
     setForm(prod);
+    setApelidosText((prod.apelidos || []).join('\n'));
     setEditingId(prod.id);
     setValidationError(null);
     setIsFormExpanded(true);
@@ -88,6 +107,7 @@ export default function ProdutosTab({
       precoVenda: form.precoVenda !== undefined && form.precoVenda !== null ? Number(form.precoVenda) : 0,
       unidade: form.unidade?.trim() || 'Un',
       descricao: form.descricao?.trim() || '',
+      apelidos: parseProductAliases(apelidosText),
       ativo: form.ativo !== false,
       cor: form.cor?.trim(),
       variacao: form.variacao?.trim(),
@@ -109,19 +129,19 @@ export default function ProdutosTab({
     }
   };
 
-  // Filter products based on search query and representada filter
+  // Filter products by name, code, aliases, description, and represented company
   const produtosFiltrados = produtos.filter(p => {
-    const query = searchQuery.toLowerCase();
+    const query = normalizeProductSearch(searchQuery);
     const repMatch = selectedRepFilter === 'all' || p.representadaId === selectedRepFilter;
-    
-    // Get represented name to search by it too
-    const repName = representadas.find(r => r.id === p.representadaId)?.nomeFantasia.toLowerCase() || '';
-
-    const textMatch = 
-      p.nome.toLowerCase().includes(query) ||
-      p.codigo.toLowerCase().includes(query) ||
-      (p.descricao || '').toLowerCase().includes(query) ||
-      repName.includes(query);
+    const repName = representadas.find(r => r.id === p.representadaId)?.nomeFantasia || '';
+    const searchableValues = [
+      p.nome,
+      p.codigo,
+      p.descricao || '',
+      repName,
+      ...(p.apelidos || []),
+    ];
+    const textMatch = searchableValues.some(value => normalizeProductSearch(value).includes(query));
 
     return repMatch && textMatch;
   });
@@ -222,6 +242,19 @@ export default function ProdutosTab({
                           <option key={rep.id} value={rep.id}>{rep.nomeFantasia}</option>
                         ))}
                       </select>
+                    </div>
+
+                    {/* Apelidos / outras denominações */}
+                    <div className="space-y-1 md:col-span-4">
+                      <label className="block text-xs font-mono uppercase text-slate-500">Apelidos / outras denominações (Opcional)</label>
+                      <textarea
+                        rows={2}
+                        placeholder="Ex.: nome usado pelo cliente; referência alternativa"
+                        value={apelidosText}
+                        onChange={(e) => setApelidosText(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800"
+                      />
+                      <p className="text-[10px] text-slate-400">Separe cada denominação por linha ou ponto e vírgula.</p>
                     </div>
 
                     {/* Cor */}

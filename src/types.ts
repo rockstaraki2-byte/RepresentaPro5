@@ -90,6 +90,7 @@ export interface Produto {
   empresaRepresentacaoId?: string; // Multi-tenant link
   cor?: string;           // Opções de cor
   variacao?: string;      // Variações/Tamanho
+  apelidos?: string[];    // Denominações alternativas usadas para localizar o produto
 }
 
 export interface UserPermissions {
