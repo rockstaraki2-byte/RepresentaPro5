@@ -898,186 +898,236 @@ export function gerarDashboardPDF(
   filterText += `Status: ${filtros.status || 'Todos'}`;
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
-  doc.text(filterText, headerTextOffset, 26);
+  doc.text(doc.splitTextToSize(filterText, 210 - headerTextOffset - 15), headerTextOffset, 26, { lineHeightFactor: 1 });
 
-  // Quick stats panels (4 cols)
+  // Quick stats panels with softer, rounded cards.
   const colW = 42;
   const colY = 42;
-  
-  // Stat 1: Total faturado
-  doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
-  doc.rect(15, colY, colW, 20, 'F');
-  doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-  doc.rect(15, colY, colW, 20, 'D');
-  doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text('TOTAL DE VENDAS', 18, colY + 5);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(formatarMoeda(totalVendas), 18, colY + 13);
+  const statCards = [
+    { label: 'TOTAL DE VENDAS', value: formatarMoeda(totalVendas), fill: lightColor, border: borderColor, text: darkColor },
+    { label: 'COMISSÕES TOTAIS', value: formatarMoeda(totalComissoes), fill: lightColor, border: borderColor, text: darkColor },
+    { label: 'COMISSÃO RECEBIDA', value: formatarMoeda(comissaoPaga), fill: [240, 253, 244], border: [187, 247, 208], text: [21, 128, 61] },
+    { label: 'COMISSÃO A RECEBER', value: formatarMoeda(comissaoPendente), fill: [254, 243, 199], border: [253, 230, 138], text: [180, 83, 9] }
+  ];
 
-  // Stat 2: Total comissoes
-  doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
-  doc.rect(15 + colW + 4, colY, colW, 20, 'F');
-  doc.rect(15 + colW + 4, colY, colW, 20, 'D');
-  doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text('COMISSÕES TOTAIS', 15 + colW + 7, colY + 5);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(formatarMoeda(totalComissoes), 15 + colW + 7, colY + 13);
+  statCards.forEach((card, index) => {
+    const x = 15 + (colW + 4) * index;
+    doc.setFillColor(card.fill[0], card.fill[1], card.fill[2]);
+    doc.setDrawColor(card.border[0], card.border[1], card.border[2]);
+    doc.roundedRect(x, colY, colW, 20, 3, 3, 'FD');
+    doc.setTextColor(card.text[0], card.text[1], card.text[2]);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(card.label, x + 3, colY + 5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(card.value, x + 3, colY + 13);
+  });
 
-  // Stat 3: Comissões Recebidas
-  doc.setFillColor(240, 253, 244); // light green bg
-  doc.rect(15 + (colW * 2) + 8, colY, colW, 20, 'F');
-  doc.setDrawColor(187, 247, 208);
-  doc.rect(15 + (colW * 2) + 8, colY, colW, 20, 'D');
-  doc.setTextColor(21, 128, 61); // green-700
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text('COMISSÃO RECEBIDA', 15 + (colW * 2) + 11, colY + 5);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(formatarMoeda(comissaoPaga), 15 + (colW * 2) + 11, colY + 13);
+  const tableX = 15;
+  const tableWidth = 180;
+  const contentBottom = 270;
+  const tableFontSize = 7;
+  const lineHeightMm = tableFontSize * 1.15 * 25.4 / 72;
 
-  // Stat 4: Comissões Pendentes
-  doc.setFillColor(254, 243, 199); // light amber bg
-  doc.rect(15 + (colW * 3) + 12, colY, colW, 20, 'F');
-  doc.setDrawColor(253, 230, 138);
-  doc.rect(15 + (colW * 3) + 12, colY, colW, 20, 'D');
-  doc.setTextColor(180, 83, 9); // amber-700
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text('COMISSÃO A RECEBER', 15 + (colW * 3) + 15, colY + 5);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(formatarMoeda(comissaoPendente), 15 + (colW * 3) + 15, colY + 13);
+  type DashboardPdfColumn = {
+    label: string;
+    width: number;
+    value: (item: any) => string;
+    align?: 'left' | 'right';
+    bold?: boolean;
+  };
+
+  const wrapCell = (value: string, width: number, bold = false): string[] => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(tableFontSize);
+    const lines = doc.splitTextToSize(value || 'N/A', Math.max(4, width - 4));
+    return Array.isArray(lines) ? lines : [lines];
+  };
+
+  const drawSectionBand = (title: string, top: number): number => {
+    doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.roundedRect(tableX, top, tableWidth, 7, 1.8, 1.8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(title, tableX + 3, top + 4.8);
+    return top + 7;
+  };
+
+  const getHeaderHeight = (columns: DashboardPdfColumn[]): number => {
+    const lineCounts = columns.map(column => wrapCell(column.label, column.width, true).length);
+    return Math.max(7, 2 + Math.max(...lineCounts) * lineHeightMm);
+  };
+
+  const drawTableHeader = (columns: DashboardPdfColumn[], top: number): number => {
+    const headerHeight = getHeaderHeight(columns);
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(tableX, top, tableWidth, headerHeight, 1.4, 1.4, 'F');
+    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(tableFontSize);
+
+    let x = tableX;
+    columns.forEach(column => {
+      const lines = wrapCell(column.label, column.width, true);
+      const textY = top + (headerHeight - lines.length * lineHeightMm) / 2 + tableFontSize * 0.3528 * 0.85;
+      doc.text(lines, x + 2, textY, { lineHeightFactor: 1.15 });
+      x += column.width;
+    });
+
+    return top + headerHeight;
+  };
+
+  const prepareDashboardRow = (item: any, columns: DashboardPdfColumn[]) => {
+    const cells = columns.map(column => wrapCell(column.value(item), column.width, Boolean(column.bold)));
+    const maxLines = Math.max(...cells.map(lines => lines.length));
+    return {
+      cells,
+      height: Math.max(7, 2.2 + maxLines * lineHeightMm)
+    };
+  };
+
+  const drawDashboardRow = (
+    prepared: ReturnType<typeof prepareDashboardRow>,
+    columns: DashboardPdfColumn[],
+    top: number,
+    index: number
+  ) => {
+    if (index % 2 === 1) {
+      doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
+      doc.rect(tableX, top, tableWidth, prepared.height, 'F');
+    }
+
+    let x = tableX;
+    columns.forEach((column, cellIndex) => {
+      const lines = prepared.cells[cellIndex];
+      const textY = top + (prepared.height - lines.length * lineHeightMm) / 2 + tableFontSize * 0.3528 * 0.85;
+      doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+      doc.setFont('helvetica', column.bold ? 'bold' : 'normal');
+      doc.setFontSize(tableFontSize);
+      const align = column.align || 'left';
+      const textX = align === 'right' ? x + column.width - 2 : x + 2;
+      doc.text(lines, textX, textY, { align, lineHeightFactor: 1.15 });
+      x += column.width;
+    });
+
+    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+    doc.line(tableX, top + prepared.height, tableX + tableWidth, top + prepared.height);
+  };
 
   let y = 70;
+  const startContinuationPage = (sectionTitle: string, columns: DashboardPdfColumn[]) => {
+    doc.addPage('a4', 'portrait');
+    y = 18;
+    y = drawSectionBand(sectionTitle + ' (continuação)', y);
+    y = drawTableHeader(columns, y);
+  };
 
-  // Section 1: Performance by Factory
-  doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
-  doc.rect(15, y, 180, 7, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text('DESEMPENHO POR FABRICANTE / REPRESENTADA', 18, y + 4.8);
+  const drawDashboardRows = (items: any[], columns: DashboardPdfColumn[], sectionTitle: string) => {
+    items.forEach((item, index) => {
+      const prepared = prepareDashboardRow(item, columns);
+      if (y + prepared.height > contentBottom) {
+        startContinuationPage(sectionTitle, columns);
+      }
+      drawDashboardRow(prepared, columns, y, index);
+      y += prepared.height;
+    });
+  };
 
-  y += 7;
-  
-  // Table head
-  doc.setFillColor(241, 245, 249);
-  doc.rect(15, y, 180, 7, 'F');
-  doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-  doc.setFontSize(7.5);
-  doc.text('Fábrica / Marca', 18, y + 4.8);
-  doc.text('Volume Faturado', 90, y + 4.8);
-  doc.text('Comissão Estimada', 140, y + 4.8);
-  doc.text('% do Total', 178, y + 4.8);
+  // Section 1: Performance by Factory. Every cell wraps instead of shortening names.
+  const performanceColumns: DashboardPdfColumn[] = [
+    { label: 'Fábrica / Marca', width: 72, value: row => row.name, bold: true },
+    { label: 'Volume Faturado', width: 38, value: row => row.volume, align: 'right' },
+    { label: 'Comissão Estimada', width: 43, value: row => row.commission, align: 'right' },
+    { label: '% do Total', width: 27, value: row => row.percent, align: 'right' }
+  ];
 
-  y += 7;
+  y = drawSectionBand('DESEMPENHO POR FABRICANTE / REPRESENTADA', y);
+  y = drawTableHeader(performanceColumns, y);
 
-  representadas.forEach((rep, index) => {
+  const performanceRows = representadas.map(rep => {
     const repPedidos = activePedidos.filter(p => p.representadaId === rep.id);
     const repVendas = repPedidos.reduce((sum, p) => sum + p.valorTotal, 0);
     const repComissao = repPedidos.reduce((sum, p) => sum + p.valorComissao, 0);
     const percent = totalVendas > 0 ? (repVendas / totalVendas) * 100 : 0;
-
-    if (index % 2 === 1) {
-      doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
-      doc.rect(15, y, 180, 7, 'F');
-    }
-    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-    doc.line(15, y + 7, 195, y + 7);
-
-    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-    doc.setFont('helvetica', 'bold');
-    const displayRepName = rep.nomeFantasia.length > 25 ? rep.nomeFantasia.substring(0, 22) + '...' : rep.nomeFantasia;
-    doc.text(displayRepName, 18, y + 4.8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(formatarMoeda(repVendas), 90, y + 4.8);
-    doc.text(formatarMoeda(repComissao), 140, y + 4.8);
-    doc.text(`${percent.toFixed(1)}%`, 178, y + 4.8);
-
-    y += 7;
+    return {
+      name: rep.nomeFantasia,
+      volume: formatarMoeda(repVendas),
+      commission: formatarMoeda(repComissao),
+      percent: percent.toFixed(1) + '%'
+    };
   });
-
+  drawDashboardRows(performanceRows, performanceColumns, 'DESEMPENHO POR FABRICANTE / REPRESENTADA');
   y += 6;
 
-  // Section 2: Recent Transactions under active filters
-  doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
-  doc.rect(15, y, 180, 7, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text('TRANSAÇÕES RECENTES FILTRADAS (MÁXIMO 12)', 18, y + 4.8);
+  // Section 2: Recent Transactions under active filters.
+  const transactionTitle = 'TRANSAÇÕES RECENTES FILTRADAS (MÁXIMO 12)';
+  const transactionColumns: DashboardPdfColumn[] = [
+    { label: 'Cód. Pedido', width: 26, value: row => '#' + row.orderNumber, bold: true },
+    { label: 'Emissão', width: 18, value: row => row.date },
+    { label: 'Cliente', width: 38, value: row => row.client },
+    { label: 'Representada', width: 36, value: row => row.company },
+    { label: 'Status', width: 24, value: row => row.status },
+    { label: 'Total', width: 19, value: row => row.total, align: 'right' },
+    { label: 'Comissão', width: 19, value: row => row.commission, align: 'right' }
+  ];
 
-  y += 7;
+  const transactionStartHeight = 7 + getHeaderHeight(transactionColumns) + 7;
+  if (y + transactionStartHeight > contentBottom) {
+    doc.addPage('a4', 'portrait');
+    y = 18;
+  }
+  y = drawSectionBand(transactionTitle, y);
+  y = drawTableHeader(transactionColumns, y);
 
-  // Table header (Optimized Spacing to prevent any overlap)
-  doc.setFillColor(241, 245, 249);
-  doc.rect(15, y, 180, 7, 'F');
-  doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-  doc.setFontSize(7.5);
-  doc.text('Cód. Pedido', 16, y + 4.8);
-  doc.text('Emissão', 44, y + 4.8);
-  doc.text('Cliente', 62, y + 4.8);
-  doc.text('Representada', 102, y + 4.8);
-  doc.text('Status', 140, y + 4.8);
-  doc.text('Total', 170, y + 4.8, { align: 'right' });
-  doc.text('Comissão', 195, y + 4.8, { align: 'right' });
+  const transactionRows = filteredPedidos.slice(0, 12).map(p => {
+    const cli = clientes.find(c => c.id === p.clienteId);
+    const rep = representadas.find(r => r.id === p.representadaId);
+    return {
+      orderNumber: p.numeroPedido,
+      date: formatarData(p.dataPedido),
+      client: cli?.nomeFantasia || 'N/A',
+      company: rep?.nomeFantasia || 'N/A',
+      status: p.status.toUpperCase(),
+      total: formatarMoeda(p.valorTotal),
+      commission: formatarMoeda(p.valorComissao)
+    };
+  });
 
-  y += 7;
-
-  const pedidosList = filteredPedidos.slice(0, 12);
-  if (pedidosList.length === 0) {
-    doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
-    doc.rect(15, y, 180, 10, 'F');
-    doc.setFont('helvetica', 'italic');
-    doc.text('Nenhum pedido atende aos filtros definidos.', 105, y + 6, { align: 'center' });
-    y += 10;
+  if (transactionRows.length > 0) {
+    drawDashboardRows(transactionRows, transactionColumns, transactionTitle);
   } else {
-    pedidosList.forEach((p, idx) => {
-      if (idx % 2 === 1) {
-        doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
-        doc.rect(15, y, 180, 7, 'F');
-      }
-      doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-      doc.line(15, y + 7, 195, y + 7);
-
-      const cli = clientes.find(c => c.id === p.clienteId);
-      const rep = representadas.find(r => r.id === p.representadaId);
-
-      // Truncate values to fit precisely within allocated columns
-      const displayPedidoNum = p.numeroPedido.length > 13 ? p.numeroPedido.substring(0, 11) + '..' : p.numeroPedido;
-      const displayCliente = cli?.nomeFantasia ? (cli.nomeFantasia.length > 18 ? cli.nomeFantasia.substring(0, 16) + '..' : cli.nomeFantasia) : 'N/A';
-      const displayRepresentada = rep?.nomeFantasia ? (rep.nomeFantasia.length > 16 ? rep.nomeFantasia.substring(0, 14) + '..' : rep.nomeFantasia) : 'N/A';
-
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.text(`#${displayPedidoNum}`, 16, y + 4.8);
-      doc.setFont('helvetica', 'normal');
-      doc.text(formatarData(p.dataPedido), 44, y + 4.8);
-      doc.text(displayCliente, 62, y + 4.8);
-      doc.text(displayRepresentada, 102, y + 4.8);
-      doc.text(p.status.toUpperCase(), 140, y + 4.8);
-      doc.text(formatarMoeda(p.valorTotal), 170, y + 4.8, { align: 'right' });
-      doc.text(formatarMoeda(p.valorComissao), 195, y + 4.8, { align: 'right' });
-
-      y += 7;
-    });
+    const emptyLines = wrapCell('Nenhum pedido atende aos filtros definidos.', tableWidth, false);
+    const emptyHeight = Math.max(10, 2.2 + emptyLines.length * lineHeightMm);
+    if (y + emptyHeight > contentBottom) {
+      startContinuationPage(transactionTitle, transactionColumns);
+    }
+    doc.setFillColor(lightColor[0], lightColor[1], lightColor[2]);
+    doc.rect(tableX, y, tableWidth, emptyHeight, 'F');
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(tableFontSize);
+    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+    const emptyY = y + (emptyHeight - emptyLines.length * lineHeightMm) / 2 + tableFontSize * 0.3528 * 0.85;
+    doc.text(emptyLines, tableX + 4, emptyY, { lineHeightFactor: 1.15 });
+    y += emptyHeight;
   }
 
-  // Footer
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(7.5);
-  doc.setTextColor(148, 163, 184);
-  doc.text(`Relatório Executivo Gerencial gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 105, 280, { align: 'center' });
-  doc.text('© ' + new Date().getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468', 105, 285, { align: 'center' });
+  // Keep the footer clear of wrapped rows on every page.
+  const generatedAt = new Date();
+  const generatedAtText = 'Relatório Executivo Gerencial gerado em ' + generatedAt.toLocaleDateString('pt-BR') + ' às ' + generatedAt.toLocaleTimeString('pt-BR');
+  const copyrightText = '© ' + generatedAt.getFullYear() + ' Desenvolvido por Raul Soares | WhatsApp: (32) 99909-8468';
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text(generatedAtText, 105, 280, { align: 'center' });
+    doc.text(copyrightText, 105, 285, { align: 'center' });
+  }
 
-  doc.save(`Dashboard_Executivo_${new Date().toISOString().split('T')[0]}.pdf`);
+  doc.save('Dashboard_Executivo_' + new Date().toISOString().split('T')[0] + '.pdf');
 }
 
 /**
