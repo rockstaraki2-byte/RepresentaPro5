@@ -11,7 +11,9 @@ import {
   ChevronDown, 
   ChevronUp, 
   AlertCircle, 
-  Building2 
+  Building2,
+  ImagePlus,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -30,6 +32,46 @@ const parseProductAliases = (value: string): string[] => {
       return true;
     });
 };
+
+const createProductPhotoDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const objectUrl = URL.createObjectURL(file);
+  const image = new Image();
+
+  image.onload = () => {
+    URL.revokeObjectURL(objectUrl);
+    const maxSizes = [720, 640, 480];
+
+    for (const maxSize of maxSizes) {
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('Não foi possível processar a imagem neste navegador.'));
+        return;
+      }
+
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const quality = maxSize === 720 ? 0.78 : maxSize === 640 ? 0.68 : 0.58;
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      if (dataUrl.length <= 350000) {
+        resolve(dataUrl);
+        return;
+      }
+    }
+
+    reject(new Error('A foto ficou grande demais mesmo após a compactação. Escolha uma imagem mais simples.'));
+  };
+
+  image.onerror = () => {
+    URL.revokeObjectURL(objectUrl);
+    reject(new Error('Não foi possível abrir essa imagem. Use um arquivo JPG, PNG ou WebP.'));
+  };
+  image.src = objectUrl;
+});
 
 interface ProdutosTabProps {
   produtos: Produto[];
@@ -65,6 +107,7 @@ export default function ProdutosTab({
     ativo: true,
   });
   const [apelidosText, setApelidosText] = useState('');
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
 
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -94,6 +137,8 @@ export default function ProdutosTab({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isProcessingPhoto) return;
+
     if (!form.codigo?.trim() || !form.nome?.trim()) {
       setValidationError('Por favor, preencha os campos obrigatórios (Código e Nome do Produto).');
       return;
@@ -111,6 +156,7 @@ export default function ProdutosTab({
       ativo: form.ativo !== false,
       cor: form.cor?.trim(),
       variacao: form.variacao?.trim(),
+      fotoUrl: form.fotoUrl || undefined,
     };
 
     if (editingId) {
@@ -121,6 +167,32 @@ export default function ProdutosTab({
 
     resetForm();
     setIsFormExpanded(false);
+  };
+
+  const handlePhotoSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setValidationError('Selecione um arquivo de imagem.');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setValidationError('A imagem deve ter no máximo 12 MB antes do envio.');
+      return;
+    }
+
+    setIsProcessingPhoto(true);
+    try {
+      const fotoUrl = await createProductPhotoDataUrl(file);
+      setForm(current => ({ ...current, fotoUrl }));
+      setValidationError(null);
+    } catch (error) {
+      setValidationError(error instanceof Error ? error.message : 'Não foi possível processar a foto.');
+    } finally {
+      setIsProcessingPhoto(false);
+    }
   };
 
   const handleDeleteClick = (id: string, name: string) => {
@@ -257,6 +329,51 @@ export default function ProdutosTab({
                       <p className="text-[10px] text-slate-400">Separe cada denominação por linha ou ponto e vírgula.</p>
                     </div>
 
+                    {/* Foto do Produto */}
+                    <div className="space-y-2 md:col-span-4">
+                      <label className="block text-xs font-mono uppercase text-slate-500">Foto do Produto (Opcional)</label>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        {form.fotoUrl ? (
+                          <img
+                            src={form.fotoUrl}
+                            alt={`Foto de ${form.nome || 'produto'}`}
+                            className="h-24 w-24 rounded-lg border border-slate-200 bg-white object-contain"
+                          />
+                        ) : (
+                          <div className="h-24 w-24 rounded-lg border border-dashed border-slate-300 bg-white flex items-center justify-center text-slate-300">
+                            <ImagePlus className="h-7 w-7" />
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label
+                            htmlFor="produto-foto"
+                            className={`inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition-colors ${isProcessingPhoto ? 'cursor-wait opacity-70' : 'cursor-pointer hover:bg-emerald-700'}`}
+                          >
+                            {isProcessingPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                            {isProcessingPhoto ? 'Processando foto…' : form.fotoUrl ? 'Trocar foto' : 'Adicionar foto'}
+                          </label>
+                          <input
+                            id="produto-foto"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={handlePhotoSelected}
+                            disabled={isProcessingPhoto}
+                            className="sr-only"
+                          />
+                          {form.fotoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setForm(current => ({ ...current, fotoUrl: undefined }))}
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:border-red-200 hover:text-red-600"
+                            >
+                              Remover foto
+                            </button>
+                          )}
+                          <p className="w-full text-[10px] text-slate-500">JPG, PNG ou WebP. A imagem é compactada para aparecer na cópia do pedido e no PDF.</p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Cor */}
                     <div className="space-y-1">
                       <label className="block text-xs font-mono uppercase text-slate-500">Cores Disponíveis (Opcional)</label>
@@ -351,7 +468,8 @@ export default function ProdutosTab({
                     const formElem = document.getElementById('prod-form-elem') as HTMLFormElement;
                     if (formElem) formElem.requestSubmit();
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                  disabled={isProcessingPhoto}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-5 py-2 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer disabled:cursor-wait"
                 >
                   {editingId ? 'Salvar Alterações' : 'Cadastrar Produto'}
                 </button>
@@ -460,6 +578,13 @@ export default function ProdutosTab({
                     </div>
 
                     <div>
+                      {prod.fotoUrl && (
+                        <img
+                          src={prod.fotoUrl}
+                          alt={`Foto de ${prod.nome}`}
+                          className="mb-2 h-20 w-20 rounded-lg border border-slate-200 bg-white object-contain"
+                        />
+                      )}
                       <h5 className="font-serif font-bold text-sm text-slate-900 leading-snug">{prod.nome}</h5>
                       <div className="flex items-center gap-1 mt-1 text-slate-500 text-xs">
                         <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
@@ -516,3 +641,4 @@ export default function ProdutosTab({
     </div>
   );
 }
+

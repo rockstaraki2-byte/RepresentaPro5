@@ -108,7 +108,7 @@ interface PedidosTabProps {
   activePedidoToEdit: Pedido | null;
   onClearActiveEdit: () => void;
   onAdd: (pedido: Pedido) => void;
-  onEdit: (pedido: Pedido) => void;
+  onEdit: (pedido: Pedido) => void | Promise<void>;
   onDelete: (id: string) => void;
   empresaRepresentacao?: any;
   currentUser?: any;
@@ -289,8 +289,11 @@ export default function PedidosTab({
   const [emailBody, setEmailBody] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState(false);
+  const [emailFallbackOpened, setEmailFallbackOpened] = useState(false);
+  const [emailMarkWarning, setEmailMarkWarning] = useState('');
   const [recipientType, setRecipientType] = useState<'cliente' | 'fornecedor' | 'ambos'>('cliente');
   const [whatsappModalPedido, setWhatsappModalPedido] = useState<Pedido | null>(null);
+  const [whatsappOpened, setWhatsappOpened] = useState(false);
 
   // Load order for editing if triggered from props
   useEffect(() => {
@@ -416,6 +419,7 @@ export default function PedidosTab({
     if (editingItemId) {
       setItens(itens.map(it => it.id === editingItemId ? {
         ...it,
+        produtoId: selectedProdutoId || it.produtoId,
         codigo: itemCodigo.trim() || undefined,
         descricao: itemDescricao.trim(),
         cor: itemCor.trim() || undefined,
@@ -427,6 +431,7 @@ export default function PedidosTab({
     } else {
       const novoItem: OrderItem = {
         id: `item-${Date.now()}-${Math.random().toString(36).substring(5)}`,
+        produtoId: selectedProdutoId || undefined,
         codigo: itemCodigo.trim() || undefined,
         descricao: itemDescricao.trim(),
         cor: itemCor.trim() || undefined,
@@ -450,6 +455,7 @@ export default function PedidosTab({
 
   const handleEditItemInit = (item: OrderItem) => {
     setEditingItemId(item.id);
+    setSelectedProdutoId(item.produtoId || '');
     setItemCodigo(item.codigo || '');
     setItemDescricao(item.descricao);
     setItemCor(item.cor || '');
@@ -532,6 +538,32 @@ export default function PedidosTab({
     }).join('\n');
   };
 
+  const getOrderItemPhoto = (item: OrderItem) => {
+    const productById = item.produtoId ? produtos.find(product => product.id === item.produtoId) : undefined;
+    const normalizedCode = item.codigo ? normalizeSearchText(item.codigo) : '';
+    const productByCode = normalizedCode
+      ? produtos.find(product => normalizeSearchText(product.codigo) === normalizedCode)
+      : undefined;
+    const normalizedName = normalizeSearchText(item.descricao);
+    const productByName = produtos.find(product => normalizeSearchText(product.nome) === normalizedName);
+    return item.fotoUrl || productById?.fotoUrl || productByCode?.fotoUrl || productByName?.fotoUrl || '';
+  };
+
+  const getPedidoWithPhotos = (pedido: Pedido): Pedido => ({
+    ...pedido,
+    itens: pedido.itens.map(item => ({ ...item, fotoUrl: getOrderItemPhoto(item) || undefined }))
+  });
+
+  const markPedidoAsSent = async (pedido: Pedido, channel: 'E-mail' | 'WhatsApp') => {
+    const currentPedido = pedidos.find(existing => existing.id === pedido.id) || pedido;
+    await onEdit({
+      ...currentPedido,
+      foiEnviado: true,
+      enviadoVia: channel,
+      dataEnvio: new Date().toISOString()
+    });
+  };
+
   const getOrderFreightText = (p: Pedido) => {
     if (p.opcaoFrete && p.opcaoFrete !== 'nenhum') {
       const val = p.valorFrete ? formatarMoeda(p.valorFrete) : 'R$ 0,00';
@@ -555,6 +587,8 @@ export default function PedidosTab({
     setEmailSubject(`Pedido de Venda #${p.numeroPedido} - ${rep?.nomeFantasia || 'Representada'}`);
     setEmailBody(`Prezado(a) ${cli?.contato || 'Cliente'},\n\nSegue a cópia digital do Pedido de Venda #${p.numeroPedido}.\n\nTipo de Faturamento: ${fatType === 'Notinha' ? 'Notinha (Sem NF)' : 'Nota Fiscal'}\nFrete: ${freteTxt}\nStatus: ${p.status}\n\n*Itens do Pedido:*\n${itemsList}\n\nResumo Financeiro:\nSubtotal Produtos: ${formatarMoeda(p.valorSubtotal || p.valorTotal)}\nValor Total: ${formatarMoeda(p.valorTotal)}\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nRepresentação Comercial`);
     setEmailSuccess(false);
+    setEmailFallbackOpened(false);
+    setEmailMarkWarning('');
   };
 
   const handleRecipientTypeChange = (type: 'cliente' | 'fornecedor' | 'ambos') => {
@@ -621,6 +655,7 @@ ${empresaNome}`;
   };
 
   const handleSendWhatsApp = (p: Pedido) => {
+    setWhatsappOpened(false);
     setWhatsappModalPedido(p);
   };
 
@@ -629,11 +664,24 @@ ${empresaNome}`;
     if (!emailPedido) return;
     setIsSendingEmail(true);
     try {
+      if (emailFallbackOpened) {
+        try {
+          await markPedidoAsSent(emailPedido, 'E-mail');
+          setEmailSuccess(true);
+          setEmailFallbackOpened(false);
+          setTimeout(() => setEmailPedido(null), 1800);
+        } catch (error) {
+          console.error('Não foi possível registrar o envio por e-mail:', error);
+          alert('Não foi possível registrar o envio. Confira sua conexão e tente novamente.');
+        }
+        return;
+      }
+
       const cli = clientes.find(c => c.id === emailPedido.clienteId);
       const rep = representadas.find(r => r.id === emailPedido.representadaId);
       
       // Generate the PDF without saving/downloading in browser
-      const doc = gerarPedidoPDF(emailPedido, cli, rep, empresaRepresentacao, true);
+      const doc = gerarPedidoPDF(getPedidoWithPhotos(emailPedido), cli, rep, empresaRepresentacao, true);
       const blob = doc.output('blob');
       
       const blobToBase64 = (b: Blob): Promise<string> => {
@@ -672,6 +720,12 @@ ${empresaNome}`;
         throw new Error(errData.error || 'Falha ao enviar e-mail através do servidor.');
       }
 
+      try {
+        await markPedidoAsSent(emailPedido, 'E-mail');
+      } catch (error) {
+        console.error('E-mail enviado, mas a etiqueta não pôde ser salva:', error);
+        setEmailMarkWarning('O e-mail foi enviado, mas não foi possível salvar a etiqueta de envio.');
+      }
       setEmailSuccess(true);
       setTimeout(() => {
         setEmailPedido(null);
@@ -687,7 +741,7 @@ ${empresaNome}`;
       );
       if (confirmMailto) {
         window.open(mailtoUrl, '_blank');
-        setEmailPedido(null);
+        setEmailFallbackOpened(true);
       }
     } finally {
       setIsSendingEmail(false);
@@ -834,7 +888,8 @@ ${empresaNome}`;
       (cli && cli.nomeFantasia.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (rep && rep.nomeFantasia.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesStatus = statusFilter === 'Todos' || p.status === statusFilter;
+    const matchesStatus = statusFilter === 'Todos'
+      || (statusFilter === 'Enviado' ? Boolean(p.foiEnviado && p.status !== 'Faturado') : p.status === statusFilter);
     
     const matchesDataDe = !filterDataDe || p.dataPedido >= filterDataDe;
     const matchesDataAte = !filterDataAte || p.dataPedido <= filterDataAte;
@@ -1646,6 +1701,7 @@ ${empresaNome}`;
                       <option value="Faturado">Faturado</option>
                       <option value="Pago">Comissão Recebida</option>
                       <option value="Cancelado">Cancelado</option>
+                      <option value="Enviado">Tag: Enviado</option>
                     </select>
                   </div>
 
@@ -1790,10 +1846,28 @@ ${empresaNome}`;
                       <span className="font-mono text-[11px] text-slate-500">{formatarData(p.dataPedido)}</span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${badgeColor}`}>
-                        {p.status}
-                      </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select
+                        aria-label={`Alterar status do pedido ${p.numeroPedido}`}
+                        value={p.status}
+                        onChange={(event) => onEdit({ ...p, status: event.target.value as PedidoStatus })}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-200 ${badgeColor}`}
+                        title="Alterar status do pedido"
+                      >
+                        <option value="Rascunho">Rascunho</option>
+                        <option value="Pendente">Pendente</option>
+                        <option value="Faturado">Faturado</option>
+                        <option value="Pago">Pago</option>
+                        <option value="Cancelado">Cancelado</option>
+                      </select>
+                      {p.foiEnviado && p.status !== 'Faturado' && (
+                        <span
+                          title={p.enviadoVia ? `Enviado por ${p.enviadoVia}` : 'Pedido enviado'}
+                          className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border text-emerald-700 bg-emerald-50 border-emerald-200"
+                        >
+                          Enviado
+                        </span>
+                      )}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
                         (p.tipoFaturamento || cli?.tipoFaturamento) === 'Notinha' || (p.tipoFaturamento || cli?.tipoFaturamento) === 'Nf 0%'
                           ? 'bg-amber-50 text-amber-800 border-amber-200'
@@ -1819,7 +1893,7 @@ ${empresaNome}`;
                           onClick={() => {
                             const cli = clientes.find(c => c.id === p.clienteId);
                             const rep = representadas.find(r => r.id === p.representadaId);
-                            gerarPedidoPDF(p, cli, rep, empresaRepresentacao);
+                            gerarPedidoPDF(getPedidoWithPhotos(p), cli, rep, empresaRepresentacao);
                           }}
                           className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-50 rounded transition-colors cursor-pointer"
                           title="Baixar Pedido (PDF)"
@@ -1972,6 +2046,7 @@ ${empresaNome}`;
                     </div>
                     <h4 className="font-serif font-bold text-slate-800 text-sm">E-mail Enviado com Sucesso!</h4>
                     <p className="text-[11px] text-slate-400">O pedido foi processado e enviado para <strong>{emailRecipient}</strong>.</p>
+                    {emailMarkWarning && <p className="text-[11px] text-amber-700">{emailMarkWarning}</p>}
                   </div>
                 ) : (
                   <>
@@ -2078,6 +2153,12 @@ ${empresaNome}`;
                       </p>
                     </div>
 
+                    {emailFallbackOpened && (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[11px] leading-relaxed text-emerald-800">
+                        Depois de concluir o envio no seu aplicativo de e-mail, clique em <strong>Marcar como enviado</strong> para registrar a etiqueta no pedido.
+                      </div>
+                    )}
+
                     {/* Footer */}
                     <div className="pt-2 border-t border-slate-100 flex justify-end gap-3">
                       <button
@@ -2101,7 +2182,7 @@ ${empresaNome}`;
                         ) : (
                           <>
                             <Send className="w-3.5 h-3.5" />
-                            <span>Enviar por E-mail</span>
+                            <span>{emailFallbackOpened ? 'Marcar como enviado' : 'Enviar por E-mail'}</span>
                           </>
                         )}
                       </button>
@@ -2287,6 +2368,7 @@ ${empresaNome}`;
                       <table className="w-full text-left text-xs border-collapse">
                         <thead>
                           <tr className="bg-slate-900 text-white font-mono text-[10px] uppercase">
+                            <th className="py-2.5 px-3 font-bold text-center">Foto</th>
                             <th className="py-2.5 px-4 font-bold">Produto / Descrição</th>
                             <th className="py-2.5 px-4 font-bold">Cor / Var</th>
                             <th className="py-2.5 px-4 font-bold text-center">Quant.</th>
@@ -2297,6 +2379,15 @@ ${empresaNome}`;
                         <tbody className="divide-y divide-slate-100">
                           {printPedido.itens.map((it, idx) => (
                             <tr key={it.id} className={idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}>
+                              <td className="py-2 px-3 text-center align-middle">
+                                {getOrderItemPhoto(it) && (
+                                  <img
+                                    src={getOrderItemPhoto(it)}
+                                    alt={`Foto de ${it.descricao}`}
+                                    className="mx-auto h-14 w-14 rounded border border-slate-200 bg-white object-contain"
+                                  />
+                                )}
+                              </td>
                               <td className="py-3 px-4 font-serif font-bold text-slate-800">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {it.codigo && (
@@ -2423,7 +2514,9 @@ ${empresaNome}`;
               return;
             }
             const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(messageText)}`;
-            window.open(url, '_blank');
+            const openedWindow = window.open(url, '_blank');
+            if (openedWindow) setWhatsappOpened(true);
+            else alert('O navegador bloqueou a janela do WhatsApp. Permita pop-ups para este site e tente novamente.');
           };
 
           return (
@@ -2446,7 +2539,7 @@ ${empresaNome}`;
                     </div>
                   </div>
                   <button
-                    onClick={() => setWhatsappModalPedido(null)}
+                    onClick={() => { setWhatsappModalPedido(null); setWhatsappOpened(false); }}
                     className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer text-xs font-bold"
                   >
                     ✕
@@ -2543,14 +2636,30 @@ ${empresaNome}`;
                 </div>
 
                 {/* Footer */}
-                <div className="p-3.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <div className="p-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+                  {whatsappOpened ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await markPedidoAsSent(p, 'WhatsApp');
+                          setWhatsappModalPedido(null);
+                          setWhatsappOpened(false);
+                        } catch (error) {
+                          console.error('Não foi possível registrar o envio pelo WhatsApp:', error);
+                          alert('Não foi possível registrar o envio. Confira sua conexão e tente novamente.');
+                        }
+                      }}
+                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                    >
+                      Marcar como enviado
+                    </button>
+                  ) : <span className="text-[10px] text-slate-400">A etiqueta será aplicada após a confirmação do envio.</span>}
                   <button
                     type="button"
-                    onClick={() => setWhatsappModalPedido(null)}
+                    onClick={() => { setWhatsappModalPedido(null); setWhatsappOpened(false); }}
                     className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
-                  >
-                    Fechar
-                  </button>
+                  >Fechar</button>
                 </div>
               </motion.div>
             </div>

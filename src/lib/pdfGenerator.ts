@@ -136,10 +136,11 @@ export function gerarPedidoPDF(
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text('Descrição do Produto', 20, y + 5.5);
-  doc.text('Quant.', 120, y + 5.5, { align: 'center' });
-  doc.text('Preço Unit.', 150, y + 5.5, { align: 'right' });
-  doc.text('Total Item', 185, y + 5.5, { align: 'right' });
+  doc.text('Foto', 27, y + 5.5, { align: 'center' });
+  doc.text('Descrição do Produto', 42, y + 5.5);
+  doc.text('Quant.', 126, y + 5.5, { align: 'center' });
+  doc.text('Preço Unit.', 157, y + 5.5, { align: 'right' });
+  doc.text('Total Item', 188, y + 5.5, { align: 'right' });
 
   y += 8;
 
@@ -154,9 +155,9 @@ export function gerarPedidoPDF(
     if (item.cor) fullDesc += ` | Cor: ${item.cor}`;
     if (item.variacao) fullDesc += ` | Var: ${item.variacao}`;
 
-    const splitDesc = doc.splitTextToSize(fullDesc, 95);
+    const splitDesc = doc.splitTextToSize(fullDesc, 73);
     const lineCount = splitDesc.length;
-    const rowHeight = lineCount === 1 ? 8 : 8 + (lineCount - 1) * 3.5;
+    const rowHeight = Math.max(20, 8 + (lineCount - 1) * 3.5);
 
     // Check pagination
     if (y + rowHeight > 270) {
@@ -170,10 +171,11 @@ export function gerarPedidoPDF(
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.text('Descrição do Produto', 20, y + 5.5);
-      doc.text('Quant.', 120, y + 5.5, { align: 'center' });
-      doc.text('Preço Unit.', 150, y + 5.5, { align: 'right' });
-      doc.text('Total Item', 185, y + 5.5, { align: 'right' });
+      doc.text('Foto', 27, y + 5.5, { align: 'center' });
+      doc.text('Descrição do Produto', 42, y + 5.5);
+      doc.text('Quant.', 126, y + 5.5, { align: 'center' });
+      doc.text('Preço Unit.', 157, y + 5.5, { align: 'right' });
+      doc.text('Total Item', 188, y + 5.5, { align: 'right' });
 
       y += 8;
     }
@@ -185,19 +187,44 @@ export function gerarPedidoPDF(
     doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
     doc.line(15, y + rowHeight, 195, y + rowHeight);
 
+    // Keep a clear photo cell for every item. Products without a photo stay blank.
+    const photoX = 17;
+    const photoY = y + 2;
+    const photoWidth = 20;
+    const photoHeight = 16;
+    doc.setFillColor(255, 255, 255);
+    doc.rect(photoX, photoY, photoWidth, photoHeight, 'F');
+    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+    doc.rect(photoX, photoY, photoWidth, photoHeight, 'D');
+
+    if (item.fotoUrl?.startsWith('data:image/')) {
+      try {
+        const imageProperties = doc.getImageProperties(item.fotoUrl);
+        const imageScale = Math.min((photoWidth - 1) / imageProperties.width, (photoHeight - 1) / imageProperties.height);
+        const imageWidth = imageProperties.width * imageScale;
+        const imageHeight = imageProperties.height * imageScale;
+        const imageX = photoX + (photoWidth - imageWidth) / 2;
+        const imageY = photoY + (photoHeight - imageHeight) / 2;
+        const imageFormat = item.fotoUrl.split(';')[0].split('/')[1]?.toUpperCase() || 'JPEG';
+        doc.addImage(item.fotoUrl, imageFormat, imageX, imageY, imageWidth, imageHeight, `produto-${index}`, 'FAST');
+      } catch (err) {
+        console.error('Erro ao adicionar foto do produto no PDF:', err);
+      }
+    }
+
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
 
     // Draw description lines
     for (let i = 0; i < lineCount; i++) {
-      doc.text(splitDesc[i], 20, y + 4.5 + (i * 3.5));
+      doc.text(splitDesc[i], 42, y + 4.5 + (i * 3.5));
     }
 
     const verticalCenterOffset = y + (rowHeight / 2) + 1.2;
-    doc.text(String(item.quantidade), 120, verticalCenterOffset, { align: 'center' });
-    doc.text(formatarMoeda(item.precoUnitario), 150, verticalCenterOffset, { align: 'right' });
-    doc.text(formatarMoeda(item.totalItem), 185, verticalCenterOffset, { align: 'right' });
+    doc.text(String(item.quantidade), 126, verticalCenterOffset, { align: 'center' });
+    doc.text(formatarMoeda(item.precoUnitario), 157, verticalCenterOffset, { align: 'right' });
+    doc.text(formatarMoeda(item.totalItem), 188, verticalCenterOffset, { align: 'right' });
 
     y += rowHeight;
   });
@@ -1418,3 +1445,4 @@ export function gerarProvisionamentoPDF(
 
   doc.save(`Provisionamento_Financeiro_${new Date().toISOString().split('T')[0]}.pdf`);
 }
+

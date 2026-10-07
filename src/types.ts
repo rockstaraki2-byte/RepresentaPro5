@@ -35,6 +35,8 @@ export interface Cliente {
 
 export interface OrderItem {
   id: string;
+  produtoId?: string;
+  fotoUrl?: string;
   codigo?: string;
   descricao: string;
   quantidade: number;
@@ -65,6 +67,9 @@ export interface Pedido {
   comissaoPercentual: number; // Porcentagem de comissão deste pedido
   valorComissao: number; // Calculado: valorTotal * (comissaoPercentual / 100)
   status: PedidoStatus;
+  foiEnviado?: boolean;
+  enviadoVia?: 'E-mail' | 'WhatsApp';
+  dataEnvio?: string;
   statusComissao?: 'Pendente' | 'Liberada' | 'Paga' | 'Excluida';
   observacoes?: string;
   condicoesPagamento?: string;
@@ -91,6 +96,7 @@ export interface Produto {
   cor?: string;           // Opções de cor
   variacao?: string;      // Variações/Tamanho
   apelidos?: string[];    // Denominações alternativas usadas para localizar o produto
+  fotoUrl?: string;       // Foto compactada em data URI para uso no pedido e no PDF
 }
 
 export interface UserPermissions {
@@ -140,5 +146,6 @@ export interface EmpresaRepresentacao {
   gmailUser?: string;
   gmailAppPass?: string;
 }
+
 
 

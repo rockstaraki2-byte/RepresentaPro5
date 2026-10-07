@@ -6,7 +6,6 @@ import {
   Users, 
   ShoppingCart, 
   Landmark, 
-  TrendingUp, 
   AlertCircle,
   Tag,
   ShieldCheck,
@@ -274,7 +273,11 @@ export default function App() {
 
   useEffect(() => {
     if (isDemoMode) return;
-    try { localStorage.setItem('rep_produtos', JSON.stringify(produtos)); } catch(e) { console.error('rep_produtos', e); }
+    try {
+      // Keep photos in Firestore; avoid filling the browser's small localStorage quota.
+      const produtosSemFotos = produtos.map(({ fotoUrl: _fotoUrl, ...produto }) => produto);
+      localStorage.setItem('rep_produtos', JSON.stringify(produtosSemFotos));
+    } catch(e) { console.error('rep_produtos', e); }
   }, [produtos]);
 
   useEffect(() => {
@@ -1208,11 +1211,6 @@ export default function App() {
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-green-600 shrink-0"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.5-5.729-1.452L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.413 9.863-9.843.002-2.63-1.023-5.101-2.886-6.968C16.583 1.94 14.113.916 11.49.916c-5.434 0-9.858 4.414-9.861 9.845-.001 1.716.452 3.39 1.31 4.869L1.91 22.12l6.737-1.766zm10.37-4.144c-.3-.15-1.771-.875-2.046-.975-.276-.1-.477-.15-.677.15-.2.3-.777.975-.951 1.175-.174.2-.35.225-.65.075-1.041-.521-2.071-1.302-2.851-1.997-.6-.518-1.07-1.116-1.153-1.29-.1-.3-.01-.45.09-.599.09-.15.2-.3.3-.45.1-.15.15-.25.225-.4.075-.15.038-.3-.019-.45-.056-.15-.477-1.15-.653-1.575-.171-.413-.345-.356-.477-.356-.124-.002-.266-.002-.409-.002-.143 0-.377.054-.575.273-.2.22-.765.748-.765 1.822 0 1.074.78 2.114.89 2.263.11.15 1.516 2.315 3.673 3.243 1.171.504 1.882.68 2.538.74.656.06 1.252-.027 1.724-.097.525-.078 1.593-.65 1.819-1.275.225-.625.225-1.15.157-1.275-.069-.125-.262-.2-.562-.35z"/></svg>
               <span>32 99909-8468</span>
             </a>
-            <span className="hidden sm:inline-block text-slate-300 mx-2">|</span>
-            <span className="flex items-center gap-1">
-              <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Multiempresas: <strong className="text-slate-600">{empresas.length}</strong></span>
-            </span>
           </div>
         </div>
       </footer>
@@ -1461,3 +1459,4 @@ service cloud.firestore {
     </div>
   );
 }
+

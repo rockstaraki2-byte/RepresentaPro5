@@ -299,19 +299,19 @@ export default function RepresentadasTab({
                       <label className="block text-xs font-mono uppercase text-slate-500">
                         CNPJ da Fábrica <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex flex-col gap-2">
                         <input 
                           type="text"
                           placeholder="00.000.000/0000-00"
                           value={form.cnpj || ''}
                           onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
-                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-850 font-mono"
+                          className="w-full min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-850 font-mono"
                         />
                         <button
                           type="button"
                           disabled={isSearchingCnpj}
                           onClick={handleCnpjLookup}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer disabled:bg-slate-300"
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer disabled:bg-slate-300"
                           title="Buscar dados do CNPJ na Receita Federal"
                         >
                           {isSearchingCnpj ? (
@@ -683,3 +683,4 @@ export default function RepresentadasTab({
     </div>
   );
 }
+
