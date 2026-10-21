@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
 import {
-  GoogleAuthProvider,
   browserLocalPersistence,
   createUserWithEmailAndPassword,
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut,
 } from 'firebase/auth';
-import { Lock, User, AlertCircle, ChevronRight, Mail, ShieldCheck } from 'lucide-react';
+import { Lock, User, AlertCircle, ChevronRight, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
-import { auth, SYSTEM_ADMIN_EMAIL } from '../firebase';
+import { auth } from '../firebase';
 
 interface LoginScreenProps {
   initialError?: string | null;
@@ -98,24 +96,6 @@ export default function LoginScreen({ initialError }: LoginScreenProps) {
     }
   };
 
-  const handleGoogleAdminLogin = async () => {
-    setError(null);
-    setNotice(null);
-    setBusy(true);
-    try {
-      await setPersistence(auth, browserLocalPersistence);
-      const result = await signInWithPopup(auth, new GoogleAuthProvider());
-      if (result.user.email?.toLowerCase() !== SYSTEM_ADMIN_EMAIL || !result.user.emailVerified) {
-        await signOut(auth);
-        setError('Esta conta Google não tem acesso de administrador do sistema.');
-      }
-    } catch {
-      setError('Não foi possível autenticar com o Google. Verifique a configuração do provedor no Firebase.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#071F38] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
       <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#174F7F]/40 via-[#071F38] to-[#051526] -z-10" />
@@ -164,9 +144,6 @@ export default function LoginScreen({ initialError }: LoginScreenProps) {
 
           <div className="border-t border-white/10 pt-4 space-y-3">
             <p className="text-[10px] leading-relaxed text-slate-400">A conta só libera acesso se o e-mail verificado tiver sido cadastrado por um administrador. Para abrir o sistema sem internet, entre neste dispositivo enquanto estiver online. A sessão e os dados ficarão salvos aqui; use apenas um aparelho confiável e clique em “Sair” ao terminar.</p>
-            <button disabled={busy} type="button" onClick={handleGoogleAdminLogin} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-60">
-              <ShieldCheck className="w-4 h-4 text-emerald-300" /><span>Entrar como administrador do sistema</span>
-            </button>
           </div>
         </motion.div>
       </div>
