@@ -29,7 +29,7 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
 
 ## Configuração de autenticação e navegador
 
-- Ative os provedores Email/Senha e Google no Firebase Authentication e confirme os domínios autorizados da aplicação.
+- Os provedores Email/Senha e Google foram habilitados com `firebase deploy --only auth`; o domínio `representa-pro5.vercel.app` está autorizado no Firebase Authentication.
 - Confirme que a conta do administrador do sistema é `rockstaraki2@gmail.com` e usa uma conta Google verificada. Esse endereço está vinculado às regras de acesso global.
 - Instrua cada pessoa cadastrada a abrir o app, escolher **Criar acesso do convite**, criar uma senha e confirmar o endereço. Para quem já tem conta no Firebase Authentication, use **Esqueci minha senha**.
 - Cada representante precisa entrar online pelo menos uma vez neste build e aguardar o carregamento dos dados antes de depender do acesso offline. A sessão e uma cópia local dos dados ficam persistidas no aparelho; orientar o uso apenas em dispositivo confiável e a saída da conta ao compartilhar o aparelho.
@@ -50,6 +50,8 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
 
    Aplique as regras imediatamente após publicar o frontend. Versões antigas serão bloqueadas quando as regras entrarem; usuários verão indisponibilidade até carregarem o frontend novo e criarem/confirmarem o acesso.
 4. Valide login, leitura de cada tenant, criação de pedido, cadastro de cliente, edição de permissões e bloqueio de outro tenant com contas reais de teste. Mantenha um plano de restauração das regras e do build.
+
+A ativação desta PR foi concluída em 2026-10-21: frontend em `https://representa-pro5.vercel.app`, índices prontos, regras publicadas e provedores de autenticação habilitados. A validação ponta a ponta com contas reais permanece pendente.
 
 ## Escopo que continua pendente
 
