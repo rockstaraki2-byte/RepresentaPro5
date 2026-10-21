@@ -58,6 +58,8 @@ import {
   deleteUsuario,
   getMeta,
   saveMeta,
+  clearOfflineFirestoreCache,
+  waitForOfflineWritesToSync,
 } from './firebase';
 import DashboardTab from './components/DashboardTab';
 import RepresentadasTab from './components/RepresentadasTab';
@@ -67,6 +69,12 @@ import ProdutosTab from './components/ProdutosTab';
 import FinanceiroTab from './components/FinanceiroTab';
 import AdminTab from './components/AdminTab';
 import LoginScreen from './components/LoginScreen';
+
+function isTemporaryConnectionError(error: any): boolean {
+  const details = `${error?.code || ''} ${error?.message || error || ''}`;
+  return (typeof navigator !== 'undefined' && !navigator.onLine)
+    || /network|unavailable|offline|timed out|deadline|could not reach/i.test(details);
+}
 
 export default function App() {
   const isDemoMode =
@@ -88,6 +96,20 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(isDemoMode);
   const [authReady, setAuthReady] = useState<boolean>(isDemoMode);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [isUsingCachedData, setIsUsingCachedData] = useState(false);
+  const [hasPendingSync, setHasPendingSync] = useState(false);
+  const snapshotSyncState = React.useRef<Record<string, { fromCache: boolean; hasPendingWrites: boolean }>>({});
+
+  useEffect(() => {
+    const updateConnection = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateConnection);
+    window.addEventListener('offline', updateConnection);
+    return () => {
+      window.removeEventListener('online', updateConnection);
+      window.removeEventListener('offline', updateConnection);
+    };
+  }, []);
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -191,8 +213,9 @@ export default function App() {
     }
   };
 
-  // Firebase Auth is the only production login state. No database request is
-  // made until a verified identity resolves to a tenant profile.
+  // Firebase Auth restores its local session so the previously cached profile
+  // and tenant data can open while offline. Online refreshes still revalidate
+  // the account, and Firestore rules remain authoritative for server requests.
   useEffect(() => {
     if (isDemoMode) {
       setAuthReady(true);
@@ -200,42 +223,62 @@ export default function App() {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        setCurrentUser(null);
-        setUsuarios([]);
-        setIsAuthenticated(false);
-        setActiveEmpresaId('');
-        setAuthReady(true);
-        setLoading(false);
-        return;
-      }
-
+    let attemptId = 0;
+    const resolveAuthenticatedUser = async (firebaseUser: NonNullable<typeof auth.currentUser>) => {
+      const currentAttempt = ++attemptId;
       setLoading(true);
       try {
-        await firebaseUser.reload();
-        await firebaseUser.getIdToken(true);
         const profile = await resolveUserProfile(firebaseUser);
         if (!profile.ativo) throw new Error('Este usuário foi desativado. Fale com o administrador da empresa.');
+        if (currentAttempt !== attemptId) return;
         setCurrentUser(profile);
         setUsuarios([profile]);
         setActiveEmpresaId(isSystemAdminAccount(firebaseUser) ? 'all' : (profile.empresaRepresentacaoId || ''));
         setIsAuthenticated(true);
         setSessionError(null);
       } catch (error: any) {
+        if (currentAttempt !== attemptId) return;
         const message = error?.message || 'Não foi possível validar o acesso deste usuário.';
-        await signOut(auth).catch(() => undefined);
+        const temporaryConnectionFailure = isTemporaryConnectionError(error);
+        if (!temporaryConnectionFailure) await signOut(auth).catch(() => undefined);
         setCurrentUser(null);
         setUsuarios([]);
         setIsAuthenticated(false);
-        setSessionError(message);
+        setSessionError(temporaryConnectionFailure
+          ? 'Sem conexão. Este aparelho precisa ter acessado a conta online ao menos uma vez para guardar o perfil e os dados. Tentaremos novamente quando a internet voltar.'
+          : message);
       } finally {
+        if (currentAttempt === attemptId) {
+          setAuthReady(true);
+          setLoading(false);
+        }
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
+        attemptId += 1;
+        setCurrentUser(null);
+        setUsuarios([]);
+        setIsAuthenticated(false);
+        setActiveEmpresaId('');
+        setSessionError(null);
         setAuthReady(true);
         setLoading(false);
+        return;
       }
+      void resolveAuthenticatedUser(firebaseUser);
     });
 
-    return unsubscribe;
+    const retryWhenOnline = () => {
+      if (auth.currentUser) void resolveAuthenticatedUser(auth.currentUser);
+    };
+    window.addEventListener('online', retryWhenOnline);
+    return () => {
+      attemptId += 1;
+      unsubscribe();
+      window.removeEventListener('online', retryWhenOnline);
+    };
   }, [isDemoMode]);
 
   const systemAdmin = !isDemoMode && isSystemAdminAccount(auth.currentUser);
@@ -333,11 +376,28 @@ export default function App() {
 
     const dataPermissions = getUserPermissions(currentUser);
     isFirstSnapshot.current = true;
+    snapshotSyncState.current = {};
+    setIsUsingCachedData(false);
+    setHasPendingSync(false);
     const subscriptions: Array<() => void> = [];
     const subscribe = (name: string, handler: (snapshot: any) => void, owner?: Usuario) => {
-      subscriptions.push(onSnapshot(scopedCollection(name, scope, owner), handler, (error) => {
-        console.warn(`Atualização protegida indisponível: ${name}`, error.code);
-      }));
+      subscriptions.push(onSnapshot(
+        scopedCollection(name, scope, owner),
+        { includeMetadataChanges: true },
+        (snapshot) => {
+          snapshotSyncState.current[name] = {
+            fromCache: snapshot.metadata.fromCache,
+            hasPendingWrites: snapshot.metadata.hasPendingWrites,
+          };
+          const statuses = Object.values(snapshotSyncState.current) as Array<{ fromCache: boolean; hasPendingWrites: boolean }>;
+          setIsUsingCachedData(statuses.some((status) => status.fromCache));
+          setHasPendingSync(statuses.some((status) => status.hasPendingWrites));
+          handler(snapshot);
+        },
+        (error) => {
+          console.warn(`Atualização protegida indisponível: ${name}`, error.code);
+        },
+      ));
     };
 
     subscribe('pedidos', (snapshot) => {
@@ -564,13 +624,13 @@ export default function App() {
     };
     try {
       const [repData, cliData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
-        getUserPermissions(currentUser).verRepresentadas ? getRepresentadas(scope) : Promise.resolve([]),
-        getUserPermissions(currentUser).verClientes ? getClientes(scope) : Promise.resolve([]),
-        getPedidos(scope, currentUser),
-        getUserPermissions(currentUser).verProdutos ? getProdutos(scope) : Promise.resolve([]),
-        getEmpresas(scope),
-        getUsuarios(scope, currentUser, canManageUsers),
-        getUserPermissions(currentUser).verFinanceiro ? getMeta(scope) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
+        getUserPermissions(currentUser).verRepresentadas ? getRepresentadas(scope, true) : Promise.resolve([]),
+        getUserPermissions(currentUser).verClientes ? getClientes(scope, true) : Promise.resolve([]),
+        getPedidos(scope, currentUser, true),
+        getUserPermissions(currentUser).verProdutos ? getProdutos(scope, true) : Promise.resolve([]),
+        getEmpresas(scope, true),
+        getUsuarios(scope, currentUser, canManageUsers, true),
+        getUserPermissions(currentUser).verFinanceiro ? getMeta(scope, true) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
       ]);
       setRepresentadas(repData);
       setClientes(cliData);
@@ -593,9 +653,37 @@ export default function App() {
       window.location.href = window.location.pathname;
       return;
     }
+    if (!navigator.onLine) {
+      setErrorMessage('Para sair com segurança, reconecte-se primeiro. Assim garantimos que alterações pendentes sejam sincronizadas e removemos a cópia offline deste aparelho.');
+      return;
+    }
+
+    let timeoutId: number | undefined;
+    try {
+      await Promise.race([
+        waitForOfflineWritesToSync(),
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => reject(new Error('A sincronização ainda está pendente.')), 10000);
+        }),
+      ]);
+    } catch (error: any) {
+      setErrorMessage(error?.message === 'A sincronização ainda está pendente.'
+        ? 'Ainda há alterações aguardando confirmação do servidor. Mantenha o sistema aberto e tente sair novamente quando a sincronização terminar.'
+        : 'Não foi possível confirmar a sincronização. Verifique a conexão antes de sair.');
+      return;
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+    }
+
+    try {
+      await clearOfflineFirestoreCache();
+    } catch {
+      alert('Não consegui apagar a cópia offline com segurança. Feche as outras abas do RepresentaPRO e tente sair novamente.');
+      window.location.reload();
+      return;
+    }
+
     await signOut(auth);
-    // Old versions stored login flags and tenant data in localStorage. Remove
-    // them on logout so another person using this browser cannot reuse them.
     Object.keys(localStorage).filter((key) => key.startsWith('rep_')).forEach((key) => localStorage.removeItem(key));
     window.location.reload();
   };
@@ -625,6 +713,15 @@ export default function App() {
       {isDemoMode && (
         <div className="bg-amber-100 text-amber-900 border-b border-amber-200 text-[11px] font-extrabold text-center py-1.5 px-3 tracking-wide">
           MODO DEMONSTRAÇÃO • dados fictícios • nenhuma alteração é enviada ao banco real
+        </div>
+      )}
+      {!isDemoMode && (!isOnline || isUsingCachedData || hasPendingSync) && (
+        <div role="status" aria-live="polite" className={`px-4 py-2 text-center text-[11px] font-bold ${hasPendingSync ? 'bg-amber-100 text-amber-900' : 'bg-blue-50 text-blue-900'}`}>
+          {hasPendingSync
+            ? 'Alterações salvas neste aparelho e aguardando conexão para sincronizar.'
+            : !isOnline
+              ? 'Sem internet — exibindo os dados disponíveis da última sincronização neste aparelho.'
+              : 'Conexão instável — mostrando a cópia local enquanto o sistema tenta atualizar.'}
         </div>
       )}
       

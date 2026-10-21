@@ -1,95 +1,73 @@
-const CACHE_NAME = 'representapro-cache-v3-brand';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/representapro-icon.svg'
-];
+const CACHE_NAME = 'representapro-cache-dev';
+const BASE_ASSETS = ['/', '/index.html', '/manifest.json', '/representapro-icon.svg'];
+const BUILD_ASSETS = []; // INJECT_BUILD_ASSETS
+const ASSETS_TO_CACHE = [...new Set([...BASE_ASSETS, ...BUILD_ASSETS])];
 
-// Installs the service worker and pre-caches the core shells/assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Pré-cacheando arquivos essenciais');
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(ASSETS_TO_CACHE))
+      .then(() => self.skipWaiting()),
   );
 });
 
-// Activates and cleans up outdated caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            console.log('[Service Worker] Limpando cache antigo:', key);
-            return caches.delete(key);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.map((key) => {
+        if (key.startsWith('representapro-cache-') && key !== CACHE_NAME) {
+          return caches.delete(key);
+        }
+        return undefined;
+      })))
+      .then(() => self.clients.claim()),
   );
 });
 
-// Intercepts network requests with a highly robust strategy:
-// 1. Navigation requests ('navigate') -> Try Network-First, fallback to cached '/index.html' so SPA loads offline
-// 2. Same-origin static assets -> Stale-While-Revalidate (serve instantly from cache, update in background)
-// 3. Other requests (Firestore, APIs) -> Bypass and let native browser / SDK handle
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-
-  // Ignore non-GET requests
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
-  // Firestore & external Auth/DB bypass (handled natively by Firebase's persistentLocalCache)
-  if (!url.origin.includes(self.location.hostname)) {
-    return;
-  }
-
-  // Handle SPA Navigation requests
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          // Keep a copy of the latest index.html in cache
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put('/index.html', responseToCache);
-          });
-          return networkResponse;
-        })
-        .catch(() => {
-          // If offline, serve the cached SPA shell
-          console.log('[Service Worker] Offline: Servindo shell de index.html');
-          return caches.match('/index.html');
-        })
-    );
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request, { cache: 'no-store' });
+        if (response.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put('/index.html', response.clone());
+        }
+        return response;
+      } catch {
+        return (await caches.match('/index.html')) || new Response(
+          'O RepresentaPRO ainda não foi carregado neste dispositivo. Conecte-se à internet e abra o sistema uma vez.',
+          { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+        );
+      }
+    })());
     return;
   }
 
-  // Handle static assets (JS, CSS, images, icons, local resources) on same-origin
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      const fetchPromise = fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseToCache);
-            });
-          }
-          return networkResponse;
-        })
-        .catch((err) => {
-          console.warn('[Service Worker] Falha ao atualizar recurso do servidor:', url.pathname, err);
-          return cachedResponse; // Return cached if network fails
-        });
+  const isPrecached = ASSETS_TO_CACHE.includes(url.pathname);
+  const isStaticAsset = ['script', 'style', 'image', 'font'].includes(request.destination);
+  if (!isPrecached && !isStaticAsset) return;
 
-      // Stale-While-Revalidate strategy: return cached response instantly, but update in background
-      return cachedResponse || fetchPromise;
-    })
-  );
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+
+    try {
+      const response = await fetch(request);
+      if (response.ok) await cache.put(request, response.clone());
+      return response;
+    } catch {
+      return new Response('Recurso indisponível sem conexão.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+  })());
 });

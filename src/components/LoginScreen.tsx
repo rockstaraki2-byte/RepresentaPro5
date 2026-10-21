@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   GoogleAuthProvider,
-  browserSessionPersistence,
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
   sendEmailVerification,
   sendPasswordResetEmail,
@@ -38,7 +38,7 @@ export default function LoginScreen({ initialError }: LoginScreenProps) {
 
     setBusy(true);
     try {
-      await setPersistence(auth, browserSessionPersistence);
+      await setPersistence(auth, browserLocalPersistence);
       const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
       if (!credential.user.emailVerified) {
         await sendEmailVerification(credential.user);
@@ -63,7 +63,7 @@ export default function LoginScreen({ initialError }: LoginScreenProps) {
     }
     setBusy(true);
     try {
-      await setPersistence(auth, browserSessionPersistence);
+      await setPersistence(auth, browserLocalPersistence);
       const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
       await sendEmailVerification(credential.user);
       await signOut(auth);
@@ -103,7 +103,7 @@ export default function LoginScreen({ initialError }: LoginScreenProps) {
     setNotice(null);
     setBusy(true);
     try {
-      await setPersistence(auth, browserSessionPersistence);
+      await setPersistence(auth, browserLocalPersistence);
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
       if (result.user.email?.toLowerCase() !== SYSTEM_ADMIN_EMAIL || !result.user.emailVerified) {
         await signOut(auth);
@@ -163,7 +163,7 @@ export default function LoginScreen({ initialError }: LoginScreenProps) {
           </div>
 
           <div className="border-t border-white/10 pt-4 space-y-3">
-            <p className="text-[10px] leading-relaxed text-slate-400">A conta só libera acesso se o e-mail verificado tiver sido cadastrado por um administrador em uma empresa.</p>
+            <p className="text-[10px] leading-relaxed text-slate-400">A conta só libera acesso se o e-mail verificado tiver sido cadastrado por um administrador. Para abrir o sistema sem internet, entre neste dispositivo enquanto estiver online. A sessão e os dados ficarão salvos aqui; use apenas um aparelho confiável e clique em “Sair” ao terminar.</p>
             <button disabled={busy} type="button" onClick={handleGoogleAdminLogin} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-60">
               <ShieldCheck className="w-4 h-4 text-emerald-300" /><span>Entrar como administrador do sistema</span>
             </button>

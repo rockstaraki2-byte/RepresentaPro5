@@ -27,13 +27,15 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
 - Ative os provedores Email/Senha e Google no Firebase Authentication e confirme os domínios autorizados da aplicação.
 - Confirme que a conta do administrador do sistema é `rockstaraki2@gmail.com` e usa uma conta Google verificada. Esse endereço está vinculado às regras de acesso global.
 - Instrua cada pessoa cadastrada a abrir o app, escolher **Criar acesso do convite**, criar uma senha e confirmar o endereço. Para quem já tem conta no Firebase Authentication, use **Esqueci minha senha**.
+- Cada representante precisa entrar online pelo menos uma vez neste build e aguardar o carregamento dos dados antes de depender do acesso offline. A sessão e uma cópia local dos dados ficam persistidas no aparelho; orientar o uso apenas em dispositivo confiável e a saída da conta ao compartilhar o aparelho.
+- O cache offline fica no armazenamento local do navegador e não é criptografado pela aplicação. Enquanto estiver sem rede, o dispositivo não consegue descobrir que uma conta ou permissão foi revogada; ao reconectar, as regras do Firestore voltam a validar leituras e gravações. Revisar alterações pendentes que forem rejeitadas pelo servidor.
 - Restrinja a API key pública do Firebase aos domínios de produção e às APIs Firebase necessárias. A chave web não é uma credencial de autorização.
 - Configure Firebase App Check com reCAPTCHA v3 e defina `VITE_FIREBASE_APPCHECK_SITE_KEY` no build de produção. O código ativa App Check quando essa variável existe; a exigência no projeto precisa ser habilitada depois de validar as métricas de tráfego.
 
 ## Publicação coordenada
 
 1. Conclua a revisão do PR, rode lint, build e os testes das regras no emulador.
-2. Confirme que não há gravações offline pendentes e exporte qualquer dado local que ainda não tenha sido sincronizado. A nova versão usa cache de memória e não oferece persistência offline do Firestore.
+2. Confirme que não há gravações pendentes na versão antiga. A nova versão mantém o app shell e os arquivos estáticos em cache para abrir sem rede, e usa o cache persistente do Firestore para mostrar os últimos dados carregados e enfileirar alterações offline. Ao voltar a conexão, o Firestore sincroniza a fila; conflitos no mesmo documento seguem a política de última gravação prevalecer. O botão **Sair** exige conexão, aguarda gravações pendentes e limpa o cache local; não limpe os dados do navegador enquanto houver alterações aguardando sincronização.
 3. Publique os índices de `firestore.indexes.json` e aguarde a criação ficar pronta. Em uma janela de manutenção, publique a nova versão do frontend e aplique `firestore.rules` no projeto `representapro-b84c3`:
 
    ```sh

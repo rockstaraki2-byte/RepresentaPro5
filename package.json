@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && node scripts/generate-offline-service-worker.mjs && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "test:offline-shell": "node tests/offline-shell.test.mjs",
     "lint": "tsc --noEmit",
     "test:firestore-rules": "npx --yes firebase-tools@14.27.0 emulators:exec --project demo-representapro-security --only firestore \"node tests/firestore.rules.test.mjs\"",
     "audit:firestore-tenants": "node scripts/audit-firestore-tenant-readiness.mjs",

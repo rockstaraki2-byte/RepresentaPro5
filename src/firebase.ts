@@ -7,15 +7,21 @@ import {
   deleteField,
   doc,
   getDoc,
+  getDocFromCache,
   getDocs,
+  getDocsFromCache,
   initializeFirestore,
-  memoryLocalCache,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   query,
   setDoc,
+  clearIndexedDbPersistence,
+  terminate,
   updateDoc,
   where,
   addDoc,
   connectFirestoreEmulator,
+  waitForPendingWrites,
   type Query,
 } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
@@ -45,10 +51,82 @@ export const SYSTEM_ADMIN_EMAIL = 'rockstaraki2@gmail.com';
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Memory-only caching avoids leaving tenant data in a shared browser profile.
-// Users must be online to load current data; Firestore rules remain the actual
-// security boundary and are checked on every server request.
-export const db = initializeFirestore(app, { localCache: memoryLocalCache() });
+// Persistent cache supports offline visits on a representative's trusted device.
+// Server requests remain protected by Firestore rules; cached data is cleared
+// when the user explicitly signs out after pending writes have synchronized.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
+
+export async function waitForOfflineWritesToSync(): Promise<void> {
+  await waitForPendingWrites(db);
+}
+
+export async function clearOfflineFirestoreCache(): Promise<void> {
+  await terminate(db);
+  await clearIndexedDbPersistence(db);
+}
+
+function isBrowserOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+async function waitForServerRead<T>(request: Promise<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Network timeout while refreshing cached data.')), 3000);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function readDocument(ref: ReturnType<typeof doc>, forceServer = false) {
+  if (!forceServer) {
+    try {
+      const cached = await getDocFromCache(ref);
+      if (cached.exists() || isBrowserOffline()) return cached;
+    } catch (error) {
+      if (isBrowserOffline()) throw error;
+    }
+  }
+  try {
+    return forceServer ? await getDoc(ref) : await waitForServerRead(getDoc(ref));
+  } catch (error) {
+    if (forceServer) throw error;
+    try {
+      return await getDocFromCache(ref);
+    } catch {
+      throw error;
+    }
+  }
+}
+
+async function readQuery(target: Query, forceServer = false) {
+  if (forceServer) return getDocs(target);
+  let cachedSnapshot;
+  try {
+    cachedSnapshot = await getDocsFromCache(target);
+    if (cachedSnapshot.size > 0 || isBrowserOffline()) return cachedSnapshot;
+  } catch (error) {
+    if (isBrowserOffline()) throw error;
+  }
+
+  try {
+    return forceServer ? await getDocs(target) : await waitForServerRead(getDocs(target));
+  } catch (error) {
+    if (cachedSnapshot) return cachedSnapshot;
+    try {
+      return await getDocsFromCache(target);
+    } catch {
+      throw error;
+    }
+  }
+}
 
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
 if (typeof window !== 'undefined' && appCheckSiteKey) {
@@ -152,7 +230,7 @@ export async function resolveUserProfile(user: FirebaseUser): Promise<Usuario> {
 
   const uidRef = doc(db, 'usuarios', user.uid);
   try {
-    const uidSnapshot = await getDoc(uidRef);
+    const uidSnapshot = await readDocument(uidRef);
     if (uidSnapshot.exists()) {
       const profile = toUserProfile(uidSnapshot.data(), user.uid);
       if (!profile.ativo || profile.email.toLowerCase() !== user.email.toLowerCase()) {
@@ -161,7 +239,7 @@ export async function resolveUserProfile(user: FirebaseUser): Promise<Usuario> {
       return profile;
     }
 
-    const matchingProfiles = await getDocs(
+    const matchingProfiles = await readQuery(
       query(collection(db, 'usuarios'), where('email', '==', user.email), where('ativo', '==', true)),
     );
     const sources = matchingProfiles.docs.filter((item) => item.id !== user.uid && item.data().ativo === true);
@@ -207,18 +285,18 @@ function tenantQuery(name: string, scope: TenantScope): Query {
   return scopedCollection(name, scope);
 }
 
-async function getTenantRecords<T>(name: string, scope: TenantScope): Promise<T[]> {
+async function getTenantRecords<T>(name: string, scope: TenantScope, forceServer = false): Promise<T[]> {
   requireTenant(scope);
   try {
-    const snapshot = await getDocs(tenantQuery(name, scope));
+    const snapshot = await readQuery(tenantQuery(name, scope), forceServer);
     return snapshot.docs.map((item) => item.data() as T);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, name);
   }
 }
 
-export async function getRepresentadas(scope: TenantScope): Promise<Representada[]> {
-  return getTenantRecords<Representada>('representadas', scope);
+export async function getRepresentadas(scope: TenantScope, forceServer = false): Promise<Representada[]> {
+  return getTenantRecords<Representada>('representadas', scope, forceServer);
 }
 
 export async function saveRepresentada(rep: Representada): Promise<void> {
@@ -237,8 +315,8 @@ export async function deleteRepresentada(id: string): Promise<void> {
   }
 }
 
-export async function getClientes(scope: TenantScope): Promise<Cliente[]> {
-  return getTenantRecords<Cliente>('clientes', scope);
+export async function getClientes(scope: TenantScope, forceServer = false): Promise<Cliente[]> {
+  return getTenantRecords<Cliente>('clientes', scope, forceServer);
 }
 
 export async function saveCliente(cli: Cliente): Promise<void> {
@@ -257,10 +335,10 @@ export async function deleteCliente(id: string): Promise<void> {
   }
 }
 
-export async function getPedidos(scope: TenantScope, user?: Usuario): Promise<Pedido[]> {
+export async function getPedidos(scope: TenantScope, user?: Usuario, forceServer = false): Promise<Pedido[]> {
   const scoped = scopedCollection('pedidos', scope, user);
   try {
-    const snapshot = await getDocs(scoped);
+    const snapshot = await readQuery(scoped, forceServer);
     return snapshot.docs.map((item) => item.data() as Pedido);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'pedidos');
@@ -283,8 +361,8 @@ export async function deletePedido(id: string): Promise<void> {
   }
 }
 
-export async function getProdutos(scope: TenantScope): Promise<Produto[]> {
-  return getTenantRecords<Produto>('produtos', scope);
+export async function getProdutos(scope: TenantScope, forceServer = false): Promise<Produto[]> {
+  return getTenantRecords<Produto>('produtos', scope, forceServer);
 }
 
 export async function saveProduto(prod: Produto): Promise<void> {
@@ -303,14 +381,14 @@ export async function deleteProduto(id: string): Promise<void> {
   }
 }
 
-export async function getEmpresas(scope: TenantScope): Promise<EmpresaRepresentacao[]> {
+export async function getEmpresas(scope: TenantScope, forceServer = false): Promise<EmpresaRepresentacao[]> {
   try {
     if (scope.systemAdmin && scope.tenantId === 'all') {
-      const snapshot = await getDocs(collection(db, 'empresas'));
+      const snapshot = await readQuery(collection(db, 'empresas'), forceServer);
       return snapshot.docs.map((item) => item.data() as EmpresaRepresentacao);
     }
     requireTenant(scope);
-    const snapshot = await getDoc(doc(db, 'empresas', scope.tenantId));
+    const snapshot = await readDocument(doc(db, 'empresas', scope.tenantId), forceServer);
     return snapshot.exists() ? [snapshot.data() as EmpresaRepresentacao] : [];
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'empresas');
@@ -340,11 +418,11 @@ export async function deleteEmpresa(id: string): Promise<void> {
   }
 }
 
-export async function getUsuarios(scope: TenantScope, currentUser: Usuario, canManageUsers: boolean): Promise<Usuario[]> {
+export async function getUsuarios(scope: TenantScope, currentUser: Usuario, canManageUsers: boolean, forceServer = false): Promise<Usuario[]> {
   const result = new Map<string, Usuario>([[currentUser.id, currentUser]]);
   if (!canManageUsers) return Array.from(result.values());
   try {
-    const snapshot = await getDocs(tenantQuery('usuarios', scope));
+    const snapshot = await readQuery(tenantQuery('usuarios', scope), forceServer);
     const documents = snapshot.docs.map((item) => ({ id: item.id, data: item.data() }));
     const linkedLegacyIds = new Set<string>(documents.map(({ data }) => data.legacyId).filter((id): id is string => typeof id === 'string'));
     documents.forEach(({ id, data }) => {
@@ -372,7 +450,7 @@ export async function saveUsuario(user: Usuario): Promise<void> {
 
 export async function deleteUsuario(id: string): Promise<void> {
   try {
-    const target = await getDoc(doc(db, 'usuarios', id));
+    const target = await readDocument(doc(db, 'usuarios', id));
     const legacyId = target.exists() ? target.data().legacyId : undefined;
     if (typeof legacyId === 'string' && legacyId !== id) {
       await deleteDoc(doc(db, 'usuarios', legacyId));
@@ -383,12 +461,12 @@ export async function deleteUsuario(id: string): Promise<void> {
   }
 }
 
-export async function getMeta(scope: TenantScope): Promise<MetaVendas> {
+export async function getMeta(scope: TenantScope, forceServer = false): Promise<MetaVendas> {
   if (!scope.systemAdmin) requireTenant(scope);
   try {
-    const snapshot = await getDocs(scope.systemAdmin && scope.tenantId === 'all'
+    const snapshot = await readQuery(scope.systemAdmin && scope.tenantId === 'all'
       ? collection(db, 'meta')
-      : tenantQuery('meta', scope));
+      : tenantQuery('meta', scope), forceServer);
     if (!snapshot.empty) return snapshot.docs[0].data() as MetaVendas;
     return { metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId };
   } catch (error) {
