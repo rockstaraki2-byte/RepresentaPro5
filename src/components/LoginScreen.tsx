@@ -143,7 +143,7 @@ export default function LoginScreen({ initialError }: LoginScreenProps) {
           </div>
 
           <div className="border-t border-white/10 pt-4 space-y-3">
-            <p className="text-[10px] leading-relaxed text-slate-400">A conta só libera acesso se o e-mail verificado tiver sido cadastrado por um administrador. Para abrir o sistema sem internet, entre neste dispositivo enquanto estiver online. A sessão e os dados ficarão salvos aqui; use apenas um aparelho confiável e clique em “Sair” ao terminar.</p>
+            <p className="text-[10px] leading-relaxed text-slate-400">Representantes e demais contas só acessam com e-mail verificado e convite cadastrado por um administrador. O administrador global usa este mesmo formulário com o e-mail de administração cadastrado. Para abrir o sistema sem internet, entre neste dispositivo enquanto estiver online. A sessão e os dados ficarão salvos aqui; use apenas um aparelho confiável e clique em “Sair” ao terminar.</p>
           </div>
         </motion.div>
       </div>
