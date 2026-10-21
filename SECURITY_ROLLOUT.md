@@ -4,23 +4,27 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
 
 ## Preparação dos dados atuais
 
-1. Faça um backup exportável do Firestore e confirme que ele pode ser restaurado.
-2. Configure Application Default Credentials de uma conta administrativa do Firebase e rode a auditoria somente leitura:
+1. Configure Application Default Credentials de uma conta administrativa do Firebase e rode a auditoria somente leitura:
 
    ```sh
    npm run audit:firestore-tenants -- --project=representapro-b84c3
    ```
 
-3. Resolva os registros sem `empresaRepresentacaoId`, vínculos para empresas inexistentes, IDs de empresa inconsistentes, usuários inválidos e e-mails duplicados ou fora de minúsculas. Não atribua tenant ou dono de pedido por suposição. Para pedidos antigos sem `createdByUserId`, use uma associação revisada com o administrador da empresa.
-4. Revogue e substitua qualquer senha de app do Gmail que já tenha sido armazenada em `empresas`. Depois do backup, faça a limpeza dos campos sensíveis no Firestore:
+2. Resolva os registros sem `empresaRepresentacaoId`, vínculos para empresas inexistentes, IDs de empresa inconsistentes, usuários inválidos e e-mails duplicados ou fora de minúsculas. Não atribua tenant ou dono de pedido por suposição. Para pedidos antigos sem `createdByUserId`, use uma associação revisada com o administrador da empresa.
+3. Revogue e substitua qualquer senha de app do Gmail que já tenha sido armazenada em `empresas`. Faça a limpeza dos campos sensíveis no Firestore:
 
    ```sh
    npm run cleanup:firestore-secrets -- --project=representapro-b84c3
-   npm run cleanup:firestore-secrets -- --project=representapro-b84c3 --apply --acknowledge-backup
+   npm run cleanup:firestore-secrets -- --project=representapro-b84c3 --apply
    ```
 
    O primeiro comando é dry-run. O segundo apaga somente `senha`, `gmailUser` e `gmailAppPass` nos documentos de `usuarios` e `empresas`; ele não altera hashes nem contas do Firebase Authentication.
-5. Rode a auditoria novamente. Antes de ativar as regras, `missingTenantLinks`, `unknownTenantLinks`, `companyIdMismatches`, `invalidCompanyRecords`, `invalidBusinessRecords`, `invalidMetaIds`, `missingOrderOwners`, `unrecognizedOrderOwners`, `invalidUsers`, `nonNormalizedEmails`, `duplicateNormalizedEmails` e `documentsWithLegacySecrets` precisam estar em zero, salvo exceções revisadas e documentadas.
+4. Rode a auditoria novamente. Antes de ativar as regras, `missingTenantLinks`, `unknownTenantLinks`, `companyIdMismatches`, `invalidCompanyRecords`, `invalidBusinessRecords`, `invalidMetaIds`, `missingOrderOwners`, `unrecognizedOrderOwners`, `invalidUsers`, `nonNormalizedEmails`, `duplicateNormalizedEmails` e `documentsWithLegacySecrets` precisam estar em zero, salvo exceções revisadas e documentadas.
+
+## Exceções aprovadas para esta ativação
+
+- A ativação foi autorizada sem backup do Firestore. O projeto não tem faturamento habilitado, então não foi possível criar um bucket para exportação. Exclusões feitas durante a preparação não terão esse caminho de restauração.
+- `usuarios/usr-raul` permanece sem tenant e com e-mail inválido conforme orientação do responsável. O perfil continua armazenado, mas não terá acesso pelo novo fluxo até ser corrigido. O campo legado `senha` é removido junto com os demais segredos.
 
 ## Configuração de autenticação e navegador
 
@@ -34,7 +38,7 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
 
 ## Publicação coordenada
 
-1. Conclua a revisão do PR, rode lint, build e os testes das regras no emulador.
+1. Conclua a revisão do PR e confirme lint, build e testes das regras no emulador.
 2. Confirme que não há gravações pendentes na versão antiga. A nova versão mantém o app shell e os arquivos estáticos em cache para abrir sem rede, e usa o cache persistente do Firestore para mostrar os últimos dados carregados e enfileirar alterações offline. Ao voltar a conexão, o Firestore sincroniza a fila; conflitos no mesmo documento seguem a política de última gravação prevalecer. O botão **Sair** exige conexão, aguarda gravações pendentes e limpa o cache local; não limpe os dados do navegador enquanto houver alterações aguardando sincronização.
 3. Publique os índices de `firestore.indexes.json` e aguarde a criação ficar pronta. Em uma janela de manutenção, publique a nova versão do frontend e aplique `firestore.rules` no projeto `representapro-b84c3`:
 
