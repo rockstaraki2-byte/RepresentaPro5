@@ -11,7 +11,7 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
    ```
 
 2. Resolva os registros sem `empresaRepresentacaoId`, vínculos para empresas inexistentes, IDs de empresa inconsistentes, usuários inválidos e e-mails duplicados ou fora de minúsculas. Não atribua tenant ou dono de pedido por suposição. Para pedidos antigos sem `createdByUserId`, use uma associação revisada com o administrador da empresa.
-3. Revogue e substitua qualquer senha de app do Gmail que já tenha sido armazenada em `empresas`. Faça a limpeza dos campos sensíveis no Firestore:
+3. Faça a limpeza dos campos sensíveis no Firestore:
 
    ```sh
    npm run cleanup:firestore-secrets -- --project=representapro-b84c3
@@ -24,6 +24,7 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
 ## Exceções aprovadas para esta ativação
 
 - A ativação foi autorizada sem backup do Firestore. O projeto não tem faturamento habilitado, então não foi possível criar um bucket para exportação. Exclusões feitas durante a preparação não terão esse caminho de restauração.
+- Os campos `gmailUser` e `gmailAppPass` foram removidos dos documentos. A rotação/revogação das senhas de app no Google não foi feita e foi autorizada como pendência ignorada nesta ativação; elas podem continuar válidas fora do Firestore.
 - `usuarios/usr-raul` permanece sem tenant e com e-mail inválido conforme orientação do responsável. O perfil continua armazenado, mas não terá acesso pelo novo fluxo até ser corrigido. O campo legado `senha` é removido junto com os demais segredos.
 
 ## Configuração de autenticação e navegador
