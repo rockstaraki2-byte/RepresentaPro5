@@ -1,4 +1,18 @@
 {
+  "auth": {
+    "authorizedDomains": [
+      "representa-pro5.vercel.app",
+      "representapro-b84c3.firebaseapp.com",
+      "representapro-b84c3.web.app"
+    ],
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "RepresentaPRO",
+        "supportEmail": "rockstaraki2@gmail.com"
+      }
+    }
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
