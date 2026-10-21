@@ -36,7 +36,7 @@ interface AdminTabProps {
   onEditUsuario: (usr: Usuario) => void;
   onDeleteUsuario: (id: string) => void;
   onSelectEmpresa: (id: string) => void;
-  onSelectUsuario: (id: string) => void;
+  isSystemAdmin: boolean;
 }
 
 export default function AdminTab({
@@ -51,16 +51,15 @@ export default function AdminTab({
   onEditUsuario,
   onDeleteUsuario,
   onSelectEmpresa,
-  onSelectUsuario,
+  isSystemAdmin,
 }: AdminTabProps) {
   // Current states (moved to top to be available to all functions and state initializers)
   const activeUser = usuarios.find(u => u.id === currentUserId) || usuarios[0];
   const isCurrentUserAdmin = activeUser?.role === 'Administrador';
-  const isRaul = activeUser?.id === 'usr-raul' || activeUser?.nome?.toLowerCase() === 'raul' || activeUser?.email === 'raul';
 
   // Filter visible users and companies for restricted admins
   const visibleUsuarios = usuarios.filter(usr => {
-    if (isRaul) return true;
+    if (isSystemAdmin) return usr.id !== currentUserId;
     if (activeUser?.empresaRepresentacaoId) {
       return usr.empresaRepresentacaoId === activeUser.empresaRepresentacaoId;
     }
@@ -68,7 +67,7 @@ export default function AdminTab({
   });
 
   const visibleEmpresas = empresas.filter(emp => {
-    if (isRaul) return true;
+    if (isSystemAdmin) return true;
     if (activeUser?.empresaRepresentacaoId) {
       return emp.id === activeUser.empresaRepresentacaoId;
     }
@@ -89,8 +88,6 @@ export default function AdminTab({
     endereco: '',
     cidade: '',
     uf: '',
-    gmailUser: '',
-    gmailAppPass: '',
   });
 
   const [editingUsuarioId, setEditingUsuarioId] = useState<string | null>(null);
@@ -168,8 +165,6 @@ export default function AdminTab({
         cidade: '',
         uf: '',
         logoUrl: '',
-        gmailUser: '',
-        gmailAppPass: '',
       });
       setEditingEmpresaId(null);
     }
@@ -202,8 +197,6 @@ export default function AdminTab({
       uf: empresaForm.uf?.toUpperCase().trim() || '',
       logoUrl: empresaForm.logoUrl?.trim() || '',
       corPrimaria: empresaForm.corPrimaria || '#059669',
-      gmailUser: empresaForm.gmailUser?.trim() || '',
-      gmailAppPass: empresaForm.gmailAppPass?.trim() || '',
       isDefault: editingEmpresaId ? (empresas.find(e => e.id === editingEmpresaId)?.isDefault || false) : (empresas.length === 0),
     };
 
@@ -308,16 +301,8 @@ export default function AdminTab({
 
   const handleUsuarioSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const isEditingRaul = editingUsuarioId === 'usr-raul' || usuarioForm.nome?.toLowerCase() === 'raul' || usuarioForm.email?.toLowerCase() === 'raul';
-    const requiresCompany = !isEditingRaul && (usuarioForm.role !== 'Administrador');
-
-    if (!usuarioForm.nome?.trim() || !usuarioForm.email?.trim() || (requiresCompany && !usuarioForm.empresaRepresentacaoId)) {
+    if (!usuarioForm.nome?.trim() || !usuarioForm.email?.trim() || !usuarioForm.empresaRepresentacaoId || usuarioForm.empresaRepresentacaoId === 'all') {
       setValidationError('Preencha os campos obrigatórios (*).');
-      return;
-    }
-
-    if (!isEditingRaul && usuarioForm.role !== 'Administrador' && !usuarioForm.senha?.trim()) {
-      setValidationError('Para representantes e vendedores, a senha de login é obrigatória.');
       return;
     }
 
@@ -326,26 +311,13 @@ export default function AdminTab({
     let finalUsr: Usuario = {
       id: editingUsuarioId || `usr-${Date.now()}`,
       nome: usuarioForm.nome.trim(),
-      email: usuarioForm.email.trim(),
+      email: usuarioForm.email.trim().toLowerCase(),
       role: (usuarioForm.role as UserRole) || 'Vendedor',
       ativo: usuarioForm.ativo !== undefined ? usuarioForm.ativo : true,
       empresaRepresentacaoId: usuarioForm.empresaRepresentacaoId,
-      senha: usuarioForm.role !== 'Administrador' ? usuarioForm.senha?.trim() : undefined,
+      legacyId: usuarioForm.legacyId,
       permissoes: currentPerms
     };
-
-    if (isEditingRaul) {
-      finalUsr = {
-        ...finalUsr,
-        id: 'usr-raul',
-        nome: 'Raul',
-        email: 'raul',
-        role: 'Administrador',
-        ativo: true,
-        senha: '230213'
-      };
-      delete finalUsr.empresaRepresentacaoId;
-    }
 
     if (editingUsuarioId) {
       onEditUsuario(finalUsr);
@@ -368,90 +340,40 @@ export default function AdminTab({
   return (
     <div className="space-y-6">
 
-      {/* Profile & Sandbox Testing Simulation Hub - Raul Only */}
-      {isRaul && (
+      {/* System administrator can change the data context, never impersonate another account. */}
+      {isSystemAdmin && (
         <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-md border border-slate-700/50">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div className="space-y-1.5">
-              <span className="text-[10px] uppercase font-mono tracking-widest text-emerald-400 bg-emerald-900/40 px-2 py-0.5 rounded font-bold">
-                Sandbox de Simulação de Acesso e Multiempresas
-              </span>
-              <h3 className="font-serif font-extrabold text-base leading-tight">Painel de Login & Identidades</h3>
+              <span className="text-[10px] uppercase font-mono tracking-widest text-emerald-400 bg-emerald-900/40 px-2 py-0.5 rounded font-bold">Administração do sistema</span>
+              <h3 className="font-serif font-extrabold text-base leading-tight">Contexto da empresa</h3>
               <p className="text-xs text-slate-300">
-                Alternando os seletores abaixo, você simula o comportamento do sistema com bancos de dados isolados e restrições de permissões em tempo real.
+                A troca de empresa altera apenas os dados exibidos; o acesso continua vinculado à sua conta autenticada.
               </p>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full lg:w-auto shrink-0">
-              {/* Empresa Selector */}
-              {isRaul && (
-                <div className="space-y-1">
-                  <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
-                    Empresa Ativa (Banco de Dados Isolado):
-                  </label>
-                  <select
-                    value={activeEmpresaId}
-                    onChange={(e) => onSelectEmpresa(e.target.value)}
-                    className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold transition-all focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="all" className="bg-slate-900 text-emerald-400 font-bold">
-                      👑 Todas as Representações (Acesso Total)
-                    </option>
-                    {empresas.map(emp => (
-                      <option key={emp.id} value={emp.id} className="bg-slate-900 text-white">
-                        🏢 {emp.nomeFantasia}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Profile User/Role Selector */}
-              <div className={`space-y-1 ${!isRaul ? 'sm:col-span-2' : ''}`}>
-                <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">
-                  Usuário / Nível de Acesso Ativo:
-                </label>
-                <select
-                  value={currentUserId}
-                  onChange={(e) => onSelectUsuario(e.target.value)}
-                  className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold transition-all focus:outline-none focus:border-emerald-500 cursor-pointer"
-                >
-                  {usuarios.map(usr => {
-                    const isUsrRaul = usr.id === 'usr-raul' || usr.nome?.toLowerCase() === 'raul' || usr.email?.toLowerCase() === 'raul';
-                    const empName = isUsrRaul ? '👑 Todas (Acesso Total)' : (empresas.find(e => e.id === usr.empresaRepresentacaoId)?.nomeFantasia || 'N/A');
-                    return (
-                      <option key={usr.id} value={usr.id} className="bg-slate-900 text-white">
-                        👤 {usr.nome} ({usr.role}) - {empName}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+            <div className="space-y-1 w-full lg:w-80 shrink-0">
+              <label className="block text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">Empresa ativa</label>
+              <select value={activeEmpresaId} onChange={(e) => onSelectEmpresa(e.target.value)} className="w-full bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500 cursor-pointer">
+                <option value="all" className="bg-slate-900">Todas as representações</option>
+                {empresas.map(emp => <option key={emp.id} value={emp.id} className="bg-slate-900">{emp.nomeFantasia}</option>)}
+              </select>
             </div>
           </div>
-
-          {/* Access Rights Information Footer inside Sandbox */}
           <div className="mt-4 pt-4 border-t border-slate-700/60 flex flex-wrap items-center gap-4 text-xs text-slate-300">
             <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
               <KeyRound className="w-4 h-4 text-emerald-400" />
-              <span>Perfil Atual: <strong className="text-white">{activeUser?.nome}</strong> ({activeUser?.role})</span>
+              <span>Conta autenticada: <strong className="text-white">{activeUser?.email}</strong></span>
             </div>
             <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
               <Building className="w-4 h-4 text-blue-400" />
-              <span>Empresa Padrão: <strong className="text-white">{empresas.find(e => e.id === activeEmpresaId)?.nomeFantasia}</strong></span>
+              <span>Contexto: <strong className="text-white">{activeEmpresaId === 'all' ? 'Todas' : empresas.find(e => e.id === activeEmpresaId)?.nomeFantasia}</strong></span>
             </div>
-            {!isCurrentUserAdmin && (
-              <div className="flex items-center gap-1.5 bg-amber-950/40 text-amber-300 border border-amber-800/50 px-3 py-1.5 rounded-lg">
-                <Lock className="w-3.5 h-3.5 shrink-0" />
-                <span>Restrições Ativas: Somente <strong>Administradores</strong> podem cadastrar novos usuários ou razões sociais.</span>
-              </div>
-            )}
           </div>
         </div>
       )}
 
       {/* Configuração da Logo para a Razão Social Ativada no Sistema */}
-      {(() => {
+      {isSystemAdmin && (() => {
         const activeEmp = visibleEmpresas.find(e => e.id === activeEmpresaId) || visibleEmpresas[0];
         return (
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-5 justify-between">
@@ -512,19 +434,19 @@ export default function AdminTab({
             <span>Controle de Usuários ({visibleUsuarios.length})</span>
           </div>
         </button>
-        <button
-          onClick={() => setSubTab('empresas')}
-          className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 cursor-pointer ${
-            subTab === 'empresas' 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <div className="flex items-center gap-1.5">
-            <Building2 className="w-4 h-4" />
-            <span>Razões Sociais / Empresas Representadas ({visibleEmpresas.length})</span>
-          </div>
-        </button>
+        {isSystemAdmin && (
+          <button
+            onClick={() => setSubTab('empresas')}
+            className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 cursor-pointer ${
+              subTab === 'empresas' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Building2 className="w-4 h-4" />
+              <span>Empresas ({visibleEmpresas.length})</span>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* --- CONTENT 1: USUARIOS --- */}
@@ -574,9 +496,7 @@ export default function AdminTab({
                       <div className="flex items-center justify-between">
                         <span>Vinculado a:</span>
                         <strong className="text-slate-700 font-serif">
-                          {usr.id === 'usr-raul' || usr.nome?.toLowerCase() === 'raul' || usr.email?.toLowerCase() === 'raul'
-                            ? '👑 Todas (Acesso Total)'
-                            : (userCompany?.nomeFantasia || 'Nenhuma')}
+                          {userCompany?.nomeFantasia || 'Nenhuma'}
                         </strong>
                       </div>
                       <div className="flex items-center justify-between">
@@ -647,18 +567,18 @@ export default function AdminTab({
       )}
 
       {/* --- CONTENT 2: EMPRESAS --- */}
-      {subTab === 'empresas' && (
+      {isSystemAdmin && subTab === 'empresas' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
             <div>
               <h4 className="font-serif font-bold text-sm text-slate-800">Razões Sociais e CNPJs</h4>
-              <p className="text-[11px] text-slate-400">Cadastre as razões sociais da representação. Os relatórios adaptam-se automaticamente de acordo com a empresa selecionada. <span className="font-bold text-amber-600">(Apenas o administrador geral Raul pode adicionar ou remover razões sociais).</span></p>
+              <p className="text-[11px] text-slate-400">Cadastre as empresas de representação e selecione a empresa para consultar seus dados.</p>
             </div>
             <button
-              disabled={!isRaul}
+              disabled={!isSystemAdmin}
               onClick={() => handleAddEditEmpresaClick()}
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed shrink-0"
-              title={isRaul ? "Cadastrar nova empresa" : "Apenas o administrador geral (Raul) pode cadastrar empresas"}
+              title={isSystemAdmin ? "Cadastrar nova empresa" : "Apenas o administrador do sistema pode cadastrar empresas"}
             >
               <Plus className="w-4 h-4" />
               <span>Nova Razão Social</span>
@@ -719,18 +639,18 @@ export default function AdminTab({
                     Ativar no Sistema
                   </button>
                   <button
-                    disabled={!isRaul}
+                    disabled={!isSystemAdmin}
                     onClick={() => handleAddEditEmpresaClick(emp)}
                     className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-50 rounded transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    title={isRaul ? "Editar" : "Apenas Raul pode alterar as razões sociais"}
+                    title={isSystemAdmin ? "Editar" : "Apenas o administrador do sistema pode alterar as razões sociais"}
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    disabled={!isRaul || emp.id === activeEmpresaId}
+                    disabled={!isSystemAdmin || emp.id === activeEmpresaId}
                     onClick={() => handleDeleteEmpresaClick(emp.id, emp.nomeFantasia)}
                     className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    title={isRaul ? "Excluir" : "Apenas Raul pode remover as razões sociais"}
+                    title={isSystemAdmin ? "Excluir" : "Apenas o administrador do sistema pode remover as razões sociais"}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -916,42 +836,6 @@ export default function AdminTab({
                   </div>
                 </div>
 
-                {/* Seção de E-mail por Empresa (Multi-tenant SMTP) */}
-                <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-3.5">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-800">
-                      Configuração de E-mail da Empresa (Gmail)
-                    </span>
-                  </div>
-                  
-                  <p className="text-[10px] text-slate-500 leading-relaxed">
-                    Configure os dados do Gmail desta empresa para que os pedidos enviados via e-mail saiam diretamente da conta dela. Se deixado em branco, o sistema usará as credenciais globais ou fallback local.
-                  </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="block text-[9px] font-mono uppercase text-slate-500">E-mail do Gmail</label>
-                      <input
-                        type="email"
-                        placeholder="exemplo@gmail.com"
-                        value={empresaForm.gmailUser || ''}
-                        onChange={(e) => setEmpresaForm({ ...empresaForm, gmailUser: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 text-slate-800"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-[9px] font-mono uppercase text-slate-500">Senha de App do Google</label>
-                      <input
-                        type="password"
-                        placeholder="xxxx xxxx xxxx xxxx"
-                        value={empresaForm.gmailAppPass || ''}
-                        onChange={(e) => setEmpresaForm({ ...empresaForm, gmailAppPass: e.target.value })}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 text-slate-800"
-                      />
-                    </div>
-                  </div>
-                </div>
               </form>
             </div>
 
@@ -1012,11 +896,12 @@ export default function AdminTab({
 
                 <div className="space-y-1">
                   <label className="block text-[10px] font-mono uppercase text-slate-500 font-bold">Email do Usuário *</label>
-                  <input
+                    <input
                     type="email"
                     placeholder="ex: joao@representante.com"
                     value={usuarioForm.email || ''}
-                    onChange={(e) => setUsuarioForm({ ...usuarioForm, email: e.target.value })}
+                      disabled={Boolean(usuarioForm.legacyId)}
+                      onChange={(e) => setUsuarioForm({ ...usuarioForm, email: e.target.value.toLowerCase() })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800"
                   />
                 </div>
@@ -1064,30 +949,9 @@ export default function AdminTab({
                   </div>
                 </div>
 
-                {/* Password field / Google Sign in note */}
-                {usuarioForm.role === 'Administrador' ? (
-                  <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-[11px] text-blue-700 space-y-1">
-                    <div className="flex items-center gap-1.5 font-bold">
-                      <Globe className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                      <span>Acesso Google Ativo</span>
-                    </div>
-                    <p className="text-slate-500 leading-normal">
-                      Administradores efetuam login exclusivo via conta Google integrada (Google Workspace). Não usam senha local.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-mono uppercase text-slate-500 font-bold">Senha de Acesso *</label>
-                    <input
-                      type="text"
-                      placeholder="Defina a senha de login (Mínimo 6 dígitos)"
-                      value={usuarioForm.senha || ''}
-                      onChange={(e) => setUsuarioForm({ ...usuarioForm, senha: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800 font-mono font-bold"
-                    />
-                    <p className="text-[10px] text-slate-400">Usuários não-administradores farão login usando e-mail e esta senha.</p>
-                  </div>
-                )}
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-[11px] text-blue-700">
+                  A pessoa deve abrir o sistema, selecionar “Criar acesso do convite”, definir a própria senha e confirmar este e-mail antes de entrar.
+                </div>
 
                 {/* Seção de Permissões de Acesso Personalizadas */}
                 <div className="pt-3 border-t border-slate-200 space-y-3">

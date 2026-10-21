@@ -709,8 +709,6 @@ ${empresaNome}`;
           body: emailBody,
           attachment: pdfBase64,
           attachmentName: pdfFilename,
-          gmailUser: empresaRepresentacao?.gmailUser || '',
-          gmailAppPass: empresaRepresentacao?.gmailAppPass || '',
           fromName: empresaRepresentacao?.nomeFantasia || 'RepresentaPRO',
         }),
       });

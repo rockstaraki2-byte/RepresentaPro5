@@ -1,176 +1,369 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 1. Global Safety Net - Default Deny Catch-All
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isSystemAdmin() {
+      return signedIn() && request.auth.token.email == 'rockstaraki2@gmail.com';
+    }
+
+    function profilePath() {
+      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(profilePath());
+    }
+
+    function profile() {
+      return get(profilePath()).data;
+    }
+
+    function activeMember() {
+      return hasProfile()
+        && profile().id == request.auth.uid
+        && profile().ativo == true
+        && profile().email == request.auth.token.email
+        && profile().empresaRepresentacaoId is string;
+    }
+
+    function isTenantAdmin() {
+      return isSystemAdmin() || (activeMember() && profile().role == 'Administrador');
+    }
+
+    function permissionEnabled(name, defaultValue) {
+      return isSystemAdmin()
+        || (activeMember() && (profile().role == 'Administrador'
+          || profile().get('permissoes', {}).get(name, defaultValue) == true));
+    }
+
+    function canManageUsers() {
+      return permissionEnabled('gerenciarUsuarios', false);
+    }
+
+    function canAssignTenantAdmin() {
+      return isTenantAdmin();
+    }
+
+    function canAccessTenant(tenantId) {
+      return isSystemAdmin()
+        || (activeMember() && tenantId is string
+          && tenantId == profile().empresaRepresentacaoId);
+    }
+
+    function canSeeAllOrders() {
+      return isSystemAdmin()
+        || (activeMember() && (profile().role == 'Administrador'
+          || profile().get('permissoes', {}).get(
+            'verTodasVendas', profile().role == 'Representante'
+          ) == true));
+    }
+
+    function ownsOrder(data) {
+      return activeMember() && data.get('createdByUserId', '') is string
+        && (data.createdByUserId == request.auth.uid
+          || data.createdByUserId == profile().get('legacyId', ''));
+    }
+
+    function canReadOrder(data) {
+      return canAccessTenant(data.get('empresaRepresentacaoId', ''))
+        && (canSeeAllOrders() || ownsOrder(data));
+    }
+
+    function hasNoSensitiveFields(data) {
+      return !data.keys().hasAny(['senha', 'gmailUser', 'gmailAppPass']);
+    }
+
+    function validId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128
+        && id.matches('^[A-Za-z0-9_-]+$');
+    }
+
+    function validTenantRecord(data, id) {
+      return validId(id) && data.get('id', '') == id
+        && data.get('empresaRepresentacaoId', '') is string
+        && data.empresaRepresentacaoId.size() > 0
+        && data.empresaRepresentacaoId.size() <= 128
+        && hasNoSensitiveFields(data);
+    }
+
+    function validPermissions(data) {
+      let permissions = data.get('permissoes', {});
+      return !data.keys().hasAny(['permissoes'])
+        || (permissions is map && permissions.keys().hasOnly([
+          'verDashboard', 'verTodasVendas', 'verComissoes', 'verClientes', 'editarClientes',
+          'verProdutos', 'editarProdutos', 'verRepresentadas', 'verFinanceiro', 'criarPedidos',
+          'editarPedidos', 'excluirPedidos', 'gerenciarUsuarios'
+        ])
+        && permissions.get('verDashboard', false) is bool
+        && permissions.get('verTodasVendas', false) is bool
+        && permissions.get('verComissoes', false) is bool
+        && permissions.get('verClientes', false) is bool
+        && permissions.get('editarClientes', false) is bool
+        && permissions.get('verProdutos', false) is bool
+        && permissions.get('editarProdutos', false) is bool
+        && permissions.get('verRepresentadas', false) is bool
+        && permissions.get('verFinanceiro', false) is bool
+        && permissions.get('criarPedidos', false) is bool
+        && permissions.get('editarPedidos', false) is bool
+        && permissions.get('excluirPedidos', false) is bool
+        && permissions.get('gerenciarUsuarios', false) is bool);
+    }
+
+    function validUser(data, id) {
+      return validId(id)
+        && data.keys().hasAll(['id', 'nome', 'email', 'role', 'ativo', 'empresaRepresentacaoId'])
+        && data.keys().hasOnly([
+          'id', 'nome', 'email', 'role', 'ativo', 'empresaRepresentacaoId',
+          'permissoes', 'legacyId'
+        ])
+        && data.id == id
+        && data.nome is string && data.nome.size() > 0 && data.nome.size() <= 200
+        && data.email is string && data.email.size() <= 254
+        && data.email.matches('^[^ @]+@[^ @]+\\.[^ @]+$')
+        && (data.role == 'Administrador' || data.role == 'Representante' || data.role == 'Vendedor')
+        && data.ativo is bool
+        && data.empresaRepresentacaoId is string
+        && data.empresaRepresentacaoId.size() > 0 && data.empresaRepresentacaoId.size() <= 128
+        && validPermissions(data)
+        && (!data.keys().hasAny(['legacyId']) || (data.legacyId is string && data.legacyId.size() <= 128))
+        && hasNoSensitiveFields(data);
+    }
+
+    function matchingLegacyInvitation(data, uid) {
+      let legacyId = data.get('legacyId', '');
+      let invitePath = /databases/$(database)/documents/usuarios/$(legacyId);
+      let invite = get(invitePath);
+      return data.keys().hasAny(['legacyId'])
+        && legacyId is string && legacyId != uid
+        && exists(invitePath)
+        && invite.data.ativo == true
+        && invite.data.email == request.auth.token.email
+        && invite.data.id == legacyId
+        && invite.data.nome == data.nome
+        && invite.data.role == data.role
+        && invite.data.empresaRepresentacaoId == data.empresaRepresentacaoId
+        && invite.data.get('permissoes', {}) == data.get('permissoes', {});
+    }
+
+    function validOrder(data, id) {
+      return validTenantRecord(data, id)
+        && data.keys().hasAll([
+          'numeroPedido', 'clienteId', 'representadaId', 'dataPedido', 'itens',
+          'valorTotal', 'comissaoPercentual', 'valorComissao', 'status', 'createdByUserId'
+        ])
+        && data.numeroPedido is string && data.numeroPedido.size() <= 100
+        && data.clienteId is string && data.clienteId.size() <= 128
+        && data.representadaId is string && data.representadaId.size() <= 128
+        && data.dataPedido is string && data.dataPedido.size() <= 32
+        && data.itens is list && data.itens.size() <= 150
+        && data.valorTotal is number && data.valorTotal >= 0
+        && data.comissaoPercentual is number && data.comissaoPercentual >= 0 && data.comissaoPercentual <= 100
+        && data.valorComissao is number && data.valorComissao >= 0
+        && data.status in ['Rascunho', 'Pendente', 'Faturado', 'Pago', 'Cancelado']
+        && data.createdByUserId is string && data.createdByUserId.size() > 0
+        && data.createdByUserId.size() <= 128
+        && (!data.keys().hasAny(['statusComissao'])
+          || data.statusComissao in ['Pendente', 'Liberada', 'Paga', 'Excluida'])
+        && (!data.keys().hasAny(['foiEnviado']) || data.foiEnviado is bool)
+        && (!data.keys().hasAny(['enviadoVia']) || data.enviadoVia in ['E-mail', 'WhatsApp']);
+    }
+
+    function validRepresentada(data, id) {
+      return validTenantRecord(data, id)
+        && data.keys().hasAll(['nomeFantasia', 'razaoSocial', 'cnpj', 'comissaoPadrao', 'telefone', 'email', 'segmento', 'contato'])
+        && data.nomeFantasia is string && data.nomeFantasia.size() > 0 && data.nomeFantasia.size() <= 200
+        && data.razaoSocial is string && data.razaoSocial.size() <= 250
+        && data.cnpj is string && data.cnpj.size() <= 25
+        && data.comissaoPadrao is number && data.comissaoPadrao >= 0 && data.comissaoPadrao <= 100
+        && data.telefone is string && data.telefone.size() <= 40
+        && data.email is string && data.email.size() <= 254
+        && data.segmento is string && data.segmento.size() <= 150
+        && data.contato is string && data.contato.size() <= 150
+        && (!data.keys().hasAny(['catalogoUrl']) || data.catalogoUrl is string)
+        && (!data.keys().hasAny(['logoUrl']) || data.logoUrl is string);
+    }
+
+    function validCliente(data, id) {
+      return validTenantRecord(data, id)
+        && data.keys().hasAll(['nomeFantasia', 'cnpj'])
+        && data.nomeFantasia is string && data.nomeFantasia.size() > 0 && data.nomeFantasia.size() <= 200
+        && data.cnpj is string && data.cnpj.size() <= 25
+        && (!data.keys().hasAny(['email']) || data.email is string)
+        && (!data.keys().hasAny(['telefone']) || data.telefone is string);
+    }
+
+    function orderFinancialFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['statusComissao', 'comissaoPercentual', 'valorComissao']);
+    }
+
+    function validCompany(data, id) {
+      return validId(id) && data.get('id', '') == id
+        && data.keys().hasAll(['nomeFantasia', 'razaoSocial', 'cnpj', 'isDefault'])
+        && data.nomeFantasia is string && data.nomeFantasia.size() <= 200
+        && data.razaoSocial is string && data.razaoSocial.size() <= 250
+        && data.cnpj is string && data.cnpj.size() <= 25
+        && data.isDefault is bool && hasNoSensitiveFields(data);
+    }
+
+    function validMeta(data, id) {
+      return validId(id) && data.keys().hasAll(['metaMensal', 'anoMes', 'empresaRepresentacaoId'])
+        && data.id == id && id == 'meta-' + data.empresaRepresentacaoId
+        && data.metaMensal is number && data.metaMensal >= 0
+        && data.anoMes is string && data.anoMes.size() <= 15
+        && data.empresaRepresentacaoId is string && hasNoSensitiveFields(data);
+    }
+
+    function isLegacyPasswordCleanup(id) {
+      return signedIn() && resource.data.id == id
+        && resource.data.email == request.auth.token.email
+        && resource.data.ativo == true
+        && resource.data.keys().hasAny(['senha', 'gmailUser', 'gmailAppPass'])
+        && hasNoSensitiveFields(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['senha', 'gmailUser', 'gmailAppPass']);
+    }
+
+    match /empresas/{id} {
+      allow get: if isSystemAdmin()
+        || (activeMember() && id == profile().empresaRepresentacaoId
+          && resource.data.get('id', '') == id);
+      allow list: if isSystemAdmin()
+        || (activeMember() && resource.data.get('id', '') == profile().empresaRepresentacaoId);
+      allow create, update: if isSystemAdmin() && validCompany(request.resource.data, id);
+      allow delete: if isSystemAdmin() && resource.data.id == id;
+    }
+
+    match /usuarios/{id} {
+      allow get: if isSystemAdmin()
+        || (signedIn() && id == request.auth.uid)
+        || (activeMember() && canManageUsers()
+          && resource.data.get('empresaRepresentacaoId', '') == profile().empresaRepresentacaoId)
+        || (signedIn() && resource.data.get('email', '') == request.auth.token.email
+          && resource.data.get('ativo', false) == true);
+
+      allow list: if isSystemAdmin()
+        || (activeMember() && canManageUsers()
+          && resource.data.get('empresaRepresentacaoId', '') == profile().empresaRepresentacaoId)
+        || (signedIn() && resource.data.get('email', '') == request.auth.token.email
+          && resource.data.get('ativo', false) == true);
+
+      allow create: if (isSystemAdmin() && validUser(request.resource.data, id))
+        || (activeMember() && canManageUsers()
+          && validUser(request.resource.data, id)
+          && request.resource.data.empresaRepresentacaoId == profile().empresaRepresentacaoId
+          && (request.resource.data.role != 'Administrador' || canAssignTenantAdmin()))
+        || (signedIn() && id == request.auth.uid
+          && validUser(request.resource.data, id)
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.ativo == true
+          && matchingLegacyInvitation(request.resource.data, id));
+
+      allow update: if isSystemAdmin() && validUser(request.resource.data, id)
+        || (activeMember() && canManageUsers()
+          && (isTenantAdmin() || id != request.auth.uid)
+          && resource.data.get('empresaRepresentacaoId', '') == profile().empresaRepresentacaoId
+          && validUser(request.resource.data, id)
+          && request.resource.data.empresaRepresentacaoId == profile().empresaRepresentacaoId
+          && (!resource.data.keys().hasAny(['legacyId'])
+            || request.resource.data.email == resource.data.email)
+          && request.resource.data.get('legacyId', '') == resource.data.get('legacyId', '')
+          && (request.resource.data.role != 'Administrador' || canAssignTenantAdmin()))
+        || isLegacyPasswordCleanup(id);
+
+      allow delete: if isSystemAdmin()
+        || (activeMember() && canManageUsers()
+          && resource.data.get('empresaRepresentacaoId', '') == profile().empresaRepresentacaoId);
+    }
+
+    match /representadas/{id} {
+      allow get, list: if canAccessTenant(resource.data.get('empresaRepresentacaoId', ''))
+        && permissionEnabled('verRepresentadas', true);
+      allow create: if validRepresentada(request.resource.data, id)
+        && isTenantAdmin()
+        && canAccessTenant(request.resource.data.empresaRepresentacaoId);
+      allow update: if validRepresentada(request.resource.data, id)
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && isTenantAdmin() && canAccessTenant(resource.data.empresaRepresentacaoId);
+      allow delete: if isTenantAdmin() && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
+    }
+
+    match /clientes/{id} {
+      allow get, list: if canAccessTenant(resource.data.get('empresaRepresentacaoId', ''))
+        && permissionEnabled('verClientes', true);
+      allow create: if validCliente(request.resource.data, id)
+        && permissionEnabled('editarClientes', true)
+        && canAccessTenant(request.resource.data.empresaRepresentacaoId);
+      allow update: if validCliente(request.resource.data, id)
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && permissionEnabled('editarClientes', true) && canAccessTenant(resource.data.empresaRepresentacaoId);
+      allow delete: if permissionEnabled('editarClientes', true)
+        && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
+    }
+
+    match /produtos/{id} {
+      allow get, list: if canAccessTenant(resource.data.get('empresaRepresentacaoId', ''))
+        && permissionEnabled('verProdutos', true);
+      allow create: if validTenantRecord(request.resource.data, id)
+        && request.resource.data.keys().hasAll(['codigo', 'nome', 'precoVenda', 'unidade', 'ativo'])
+        && request.resource.data.codigo is string && request.resource.data.codigo.size() <= 100
+        && request.resource.data.nome is string && request.resource.data.nome.size() <= 200
+        && request.resource.data.precoVenda is number
+        && request.resource.data.unidade is string && request.resource.data.unidade.size() <= 40
+        && request.resource.data.ativo is bool
+        && permissionEnabled('editarProdutos', false)
+        && canAccessTenant(request.resource.data.empresaRepresentacaoId);
+      allow update: if validTenantRecord(request.resource.data, id)
+        && request.resource.data.keys().hasAll(['codigo', 'nome', 'precoVenda', 'unidade', 'ativo'])
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && permissionEnabled('editarProdutos', false) && canAccessTenant(resource.data.empresaRepresentacaoId);
+      allow delete: if permissionEnabled('editarProdutos', false)
+        && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
+    }
+
+    match /pedidos/{id} {
+      allow get, list: if canReadOrder(resource.data);
+      allow create: if validOrder(request.resource.data, id)
+        && permissionEnabled('criarPedidos', true)
+        && canAccessTenant(request.resource.data.empresaRepresentacaoId)
+        && request.resource.data.createdByUserId == request.auth.uid;
+      allow update: if validOrder(request.resource.data, id)
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && request.resource.data.createdByUserId == resource.data.createdByUserId
+        && canAccessTenant(resource.data.empresaRepresentacaoId)
+        && permissionEnabled('editarPedidos', true)
+        && (isTenantAdmin() || ownsOrder(resource.data))
+        && (isTenantAdmin() || orderFinancialFieldsUnchanged());
+      allow delete: if permissionEnabled('excluirPedidos', false)
+        && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''))
+        && (isTenantAdmin() || ownsOrder(resource.data));
+    }
+
+    match /meta/{id} {
+      allow get, list: if canAccessTenant(resource.data.get('empresaRepresentacaoId', ''))
+        && permissionEnabled('verFinanceiro', false);
+      allow create: if validMeta(request.resource.data, id)
+        && isTenantAdmin() && canAccessTenant(request.resource.data.empresaRepresentacaoId);
+      allow update: if validMeta(request.resource.data, id)
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && isTenantAdmin() && canAccessTenant(resource.data.empresaRepresentacaoId);
+      allow delete: if isTenantAdmin() && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
+    }
+
+    match /teste_conexao/{id} {
+      allow create: if activeMember()
+        && request.resource.data.keys().hasAll(['data', 'mensagem', 'usuario', 'uid'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.data is string && request.resource.data.data.size() <= 100
+        && request.resource.data.mensagem is string && request.resource.data.mensagem.size() <= 300
+        && request.resource.data.usuario is string && request.resource.data.usuario.size() <= 150;
+      allow read, update, delete: if isSystemAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
-
-    // --- Helper Primitives ---
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming(request) {
-      return request.resource.data;
-    }
-
-    function existing(resource) {
-      return resource.data;
-    }
-
-    // --- Validation Blueprints (Anti-Update-Gap & Value Poisoning Guards) ---
-
-    function isValidRepresentada(data) {
-      return data.keys().hasAll(['id', 'nomeFantasia', 'razaoSocial', 'cnpj', 'comissaoPadrao', 'empresaRepresentacaoId'])
-        && data.id is string && data.id.size() <= 100
-        && data.nomeFantasia is string && data.nomeFantasia.size() <= 250
-        && data.razaoSocial is string && data.razaoSocial.size() <= 250
-        && data.cnpj is string && data.cnpj.size() <= 25
-        && data.comissaoPadrao is number
-        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
-    }
-
-    function isValidCliente(data) {
-      return data.keys().hasAll(['id', 'nomeFantasia', 'cnpj', 'empresaRepresentacaoId'])
-        && data.id is string && data.id.size() <= 100
-        && data.nomeFantasia is string && data.nomeFantasia.size() <= 250
-        && data.cnpj is string && data.cnpj.size() <= 25
-        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
-    }
-
-    function isValidPedido(data) {
-      return data.keys().hasAll(['id', 'numeroPedido', 'clienteId', 'representadaId', 'dataPedido', 'valorTotal', 'comissaoPercentual', 'valorComissao', 'status', 'empresaRepresentacaoId', 'itens'])
-        && data.id is string && data.id.size() <= 100
-        && data.numeroPedido is string && data.numeroPedido.size() <= 100
-        && data.clienteId is string && data.clienteId.size() <= 100
-        && data.representadaId is string && data.representadaId.size() <= 100
-        && data.dataPedido is string && data.dataPedido.size() <= 50
-        && data.valorTotal is number
-        && data.comissaoPercentual is number
-        && data.valorComissao is number
-        && data.status is string && (data.status == 'Rascunho' || data.status == 'Pendente' || data.status == 'Faturado' || data.status == 'Pago' || data.status == 'Cancelado')
-        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100
-        && data.itens is list && data.itens.size() <= 150;
-    }
-
-    // Action checks for Pedido update
-    function isPedidoStatusUpdateOnly(request, resource) {
-      return incoming(request).diff(existing(resource)).affectedKeys().hasOnly(['status']);
-    }
-
-    function isValidProduto(data) {
-      return data.keys().hasAll(['id', 'codigo', 'nome', 'precoVenda', 'unidade', 'ativo', 'empresaRepresentacaoId'])
-        && data.id is string && data.id.size() <= 100
-        && data.codigo is string && data.codigo.size() <= 100
-        && data.nome is string && data.nome.size() <= 250
-        && (!data.keys().contains('representadaId') || (data.representadaId is string && data.representadaId.size() <= 100))
-        && data.precoVenda is number
-        && data.unidade is string && data.unidade.size() <= 50
-        && data.ativo is bool
-        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
-    }
-
-    function isValidEmpresaRepresentacao(data) {
-      return data.keys().hasAll(['id', 'nomeFantasia', 'razaoSocial', 'cnpj', 'isDefault'])
-        && data.id is string && data.id.size() <= 100
-        && data.nomeFantasia is string && data.nomeFantasia.size() <= 250
-        && data.razaoSocial is string && data.razaoSocial.size() <= 250
-        && data.cnpj is string && data.cnpj.size() <= 25
-        && data.isDefault is bool;
-    }
-
-    function isValidUsuario(data) {
-      return data.keys().hasAll(['id', 'nome', 'email', 'role', 'ativo'])
-        && data.id is string && data.id.size() <= 100
-        && data.nome is string && data.nome.size() <= 250
-        && data.email is string && data.email.size() <= 250
-        && data.role is string && (data.role == 'Administrador' || data.role == 'Representante' || data.role == 'Vendedor')
-        && data.ativo is bool;
-    }
-
-    function isValidMetaVendas(data) {
-      return data.keys().hasAll(['metaMensal', 'anoMes', 'empresaRepresentacaoId'])
-        && data.metaMensal is number
-        && data.anoMes is string && data.anoMes.size() <= 15
-        && data.empresaRepresentacaoId is string && data.empresaRepresentacaoId.size() <= 100;
-    }
-
-    function isValidTesteConexao(data) {
-      return data.keys().hasAll(['data', 'mensagem', 'usuario'])
-        && data.data is string && data.data.size() <= 100
-        && data.mensagem is string && data.mensagem.size() <= 300
-        && data.usuario is string && data.usuario.size() <= 150;
-    }
-
-    // --- Rules Definitions for Collections ---
-
-    // 1. Representadas
-    match /representadas/{id} {
-      allow read: if true;
-      allow create: if isValidId(id) && isValidRepresentada(incoming(request));
-      allow update: if isValidId(id) && isValidRepresentada(incoming(request));
-      allow delete: if isValidId(id);
-    }
-
-    // 2. Clientes
-    match /clientes/{id} {
-      allow read: if true;
-      allow create: if isValidId(id) && isValidCliente(incoming(request));
-      allow update: if isValidId(id) && isValidCliente(incoming(request));
-      allow delete: if isValidId(id);
-    }
-
-    // 3. Pedidos
-    match /pedidos/{id} {
-      allow read: if true;
-      allow create: if isValidId(id) && isValidPedido(incoming(request));
-      allow update: if isValidId(id) && (
-        isValidPedido(incoming(request)) || 
-        isPedidoStatusUpdateOnly(request, resource)
-      );
-      allow delete: if isValidId(id);
-    }
-
-    // 4. Produtos
-    match /produtos/{id} {
-      allow read: if true;
-      allow create: if isValidId(id) && isValidProduto(incoming(request));
-      allow update: if isValidId(id) && isValidProduto(incoming(request));
-      allow delete: if isValidId(id);
-    }
-
-    // 5. Empresas
-    match /empresas/{id} {
-      allow read: if true;
-      allow create: if isValidId(id) && isValidEmpresaRepresentacao(incoming(request));
-      allow update: if isValidId(id) && isValidEmpresaRepresentacao(incoming(request));
-      allow delete: if isValidId(id);
-    }
-
-    // 6. Usuarios
-    match /usuarios/{id} {
-      allow read: if true;
-      allow create: if isValidId(id) && isValidUsuario(incoming(request));
-      allow update: if isValidId(id) && isValidUsuario(incoming(request));
-      allow delete: if isValidId(id);
-    }
-
-    // 7. Meta
-    match /meta/{id} {
-      allow read: if true;
-      allow create, update: if isValidId(id) && isValidMetaVendas(incoming(request));
-      allow delete: if isValidId(id);
-    }
-
-    // 8. Teste Conexão (Used by Diagnostic button)
-    match /teste_conexao/{id} {
-      allow read: if true;
-      allow create: if isValidTesteConexao(incoming(request));
-      allow update: if false;
-      allow delete: if false;
-    }
   }
 }
-
