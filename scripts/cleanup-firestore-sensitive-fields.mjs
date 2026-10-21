@@ -3,21 +3,11 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
 const projectId = process.argv.find((arg) => arg.startsWith('--project='))?.slice('--project='.length);
 const applyChanges = process.argv.includes('--apply');
-const backupAcknowledged = process.argv.includes('--acknowledge-backup');
 
 if (!projectId) {
   console.error('Informe explicitamente o projeto: npm run cleanup:firestore-secrets -- --project=representapro-b84c3');
   process.exit(2);
 }
-if (applyChanges && !backupAcknowledged) {
-  console.error('Para gravar, confirme que há backup: inclua --acknowledge-backup.');
-  process.exit(2);
-}
-if (projectId === 'representapro-b84c3' && applyChanges && !backupAcknowledged) {
-  console.error('A limpeza de produção exige backup confirmado.');
-  process.exit(2);
-}
-
 const app = initializeApp({ credential: applicationDefault(), projectId });
 const db = getFirestore(app);
 const sensitiveFields = ['senha', 'gmailUser', 'gmailAppPass'];
@@ -45,5 +35,5 @@ for (const collectionName of ['usuarios', 'empresas']) {
 
 console.log(JSON.stringify({ projectId, mode: applyChanges ? 'apply' : 'dry-run', affectedDocuments: counts }, null, 2));
 if (!applyChanges) {
-  console.log('Dry-run: nenhuma alteração foi gravada. Faça backup e rode novamente com --apply --acknowledge-backup para limpar os campos.');
+  console.log('Dry-run: nenhuma alteração foi gravada. Rode novamente com --apply para limpar os campos.');
 }
