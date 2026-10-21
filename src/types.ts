@@ -120,12 +120,13 @@ export type UserRole = 'Administrador' | 'Representante' | 'Vendedor';
 
 export interface Usuario {
   id: string;
+  /** ID used by the previous local login, retained only to preserve order ownership during migration. */
+  legacyId?: string;
   nome: string;
   email: string;
   role: UserRole;
   ativo: boolean;
   empresaRepresentacaoId?: string; // Associated company
-  senha?: string; // Password for non-admin users
   permissoes?: UserPermissions;
 }
 
@@ -143,8 +144,6 @@ export interface EmpresaRepresentacao {
   isDefault: boolean;
   logoUrl?: string; // base64 data-URI or standard image URL
   corPrimaria?: string; // Hex color code for the primary palette
-  gmailUser?: string;
-  gmailAppPass?: string;
 }
 
 

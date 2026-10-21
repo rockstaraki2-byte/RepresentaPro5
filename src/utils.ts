@@ -1,7 +1,7 @@
 import { Usuario, UserPermissions } from './types';
 
 export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
-  const isAdmin = user?.role === 'Administrador' || user?.id === 'usr-raul' || user?.nome?.toLowerCase() === 'raul';
+  const isAdmin = user?.role === 'Administrador';
   const isRep = user?.role === 'Representante';
 
   if (isAdmin) {

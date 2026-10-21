@@ -1,53 +1,150 @@
 import { initializeApp } from 'firebase/app';
-import { 
-  initializeFirestore, 
-  persistentLocalCache, 
+import { connectAuthEmulator, getAuth } from 'firebase/auth';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import {
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  getDocFromCache,
+  getDocs,
+  getDocsFromCache,
+  initializeFirestore,
+  persistentLocalCache,
   persistentMultipleTabManager,
-  collection, 
-  doc, 
-  getDocs, 
-  setDoc, 
-  deleteDoc, 
-  writeBatch,
-  addDoc
+  query,
+  setDoc,
+  clearIndexedDbPersistence,
+  terminate,
+  updateDoc,
+  where,
+  addDoc,
+  connectFirestoreEmulator,
+  waitForPendingWrites,
+  type Query,
 } from 'firebase/firestore';
-import { 
-  Representada, 
-  Cliente, 
-  Pedido, 
-  Produto, 
-  EmpresaRepresentacao, 
-  Usuario, 
-  MetaVendas 
+import type { User as FirebaseUser } from 'firebase/auth';
+import type {
+  Representada,
+  Cliente,
+  Pedido,
+  Produto,
+  EmpresaRepresentacao,
+  Usuario,
+  MetaVendas,
 } from './types';
-import { 
-  SEED_REPRESENTADAS, 
-  SEED_CLIENTES, 
-  SEED_PEDIDOS, 
-  SEED_PRODUTOS, 
-  SEED_EMPRESAS, 
-  SEED_USUARIOS, 
-  SEED_METAS 
-} from './data';
-import firebaseConfig from '../firebase-applet-config.json';
 
-const finalFirebaseConfig = {
-  apiKey: "AIzaSyBF2sweJQHuc_I3S71dPjw0_5pEUQOzuu8",
-  authDomain: "representapro-b84c3.firebaseapp.com",
-  projectId: "representapro-b84c3",
-  storageBucket: "representapro-b84c3.firebasestorage.app",
-  messagingSenderId: "948207221757",
-  appId: "1:948207221757:web:be1da69bbe4490076af794",
-  measurementId: "G-K4P1RYCKW5"
+// Firebase web configuration is public by design. Restrict this key to the
+// production domains in Google Cloud; it is not an authorization mechanism.
+const firebaseConfig = {
+  apiKey: 'AIzaSyBF2sweJQHuc_I3S71dPjw0_5pEUQOzuu8',
+  authDomain: 'representapro-b84c3.firebaseapp.com',
+  projectId: 'representapro-b84c3',
+  storageBucket: 'representapro-b84c3.firebasestorage.app',
+  messagingSenderId: '948207221757',
+  appId: '1:948207221757:web:be1da69bbe4490076af794',
+  measurementId: 'G-K4P1RYCKW5',
 };
 
-// Initialize Firebase with robust offline persistent local caching
-const app = initializeApp(finalFirebaseConfig);
+export const SYSTEM_ADMIN_EMAIL = 'rockstaraki2@gmail.com';
+export const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+
+// Persistent cache supports offline visits on a representative's trusted device.
+// Server requests remain protected by Firestore rules; cached data is cleared
+// when the user explicitly signs out after pending writes have synchronized.
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
+
+export async function waitForOfflineWritesToSync(): Promise<void> {
+  await waitForPendingWrites(db);
+}
+
+export async function clearOfflineFirestoreCache(): Promise<void> {
+  await terminate(db);
+  await clearIndexedDbPersistence(db);
+}
+
+function isBrowserOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+async function waitForServerRead<T>(request: Promise<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Network timeout while refreshing cached data.')), 3000);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function readDocument(ref: ReturnType<typeof doc>, forceServer = false) {
+  if (!forceServer) {
+    try {
+      const cached = await getDocFromCache(ref);
+      if (cached.exists() || isBrowserOffline()) return cached;
+    } catch (error) {
+      if (isBrowserOffline()) throw error;
+    }
+  }
+  try {
+    return forceServer ? await getDoc(ref) : await waitForServerRead(getDoc(ref));
+  } catch (error) {
+    if (forceServer) throw error;
+    try {
+      return await getDocFromCache(ref);
+    } catch {
+      throw error;
+    }
+  }
+}
+
+async function readQuery(target: Query, forceServer = false) {
+  if (forceServer) return getDocs(target);
+  let cachedSnapshot;
+  try {
+    cachedSnapshot = await getDocsFromCache(target);
+    if (cachedSnapshot.size > 0 || isBrowserOffline()) return cachedSnapshot;
+  } catch (error) {
+    if (isBrowserOffline()) throw error;
+  }
+
+  try {
+    return forceServer ? await getDocs(target) : await waitForServerRead(getDocs(target));
+  } catch (error) {
+    if (cachedSnapshot) return cachedSnapshot;
+    try {
+      return await getDocsFromCache(target);
+    } catch {
+      throw error;
+    }
+  }
+}
+
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
+if (typeof window !== 'undefined' && appCheckSiteKey) {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider(appCheckSiteKey),
+    isTokenAutoRefreshEnabled: true,
+  });
+}
+
+if (import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+}
+
+export interface TenantScope {
+  tenantId: string;
+  systemAdmin: boolean;
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -58,121 +155,155 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-function removeUndefinedFields(obj: any): any {
-  if (Array.isArray(obj)) {
-    return obj.map(removeUndefinedFields);
-  } else if (obj !== null && typeof obj === 'object') {
-    const newObj: any = {};
-    Object.keys(obj).forEach((key) => {
-      if (obj[key] !== undefined) {
-        newObj[key] = removeUndefinedFields(obj[key]);
-      }
+function removeUndefinedFields(value: any): any {
+  if (Array.isArray(value)) return value.map(removeUndefinedFields);
+  if (value !== null && typeof value === 'object') {
+    const clean: Record<string, unknown> = {};
+    Object.keys(value).forEach((key) => {
+      if (value[key] !== undefined) clean[key] = removeUndefinedFields(value[key]);
     });
-    return newObj;
+    return clean;
   }
-  return obj;
+  return value;
 }
 
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-  };
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const message = error instanceof Error ? error.message : String(error);
+  // Never include document contents, credentials, or email addresses in logs.
+  console.error('Firestore operation failed', { operationType, path, message });
+  throw new Error(message);
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: null,
-      email: null,
-      emailVerified: null,
-      isAnonymous: null
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+export function isSystemAdminAccount(user: FirebaseUser | null | undefined): boolean {
+  return Boolean(user?.emailVerified && user.email?.toLowerCase() === SYSTEM_ADMIN_EMAIL);
 }
 
-// --- Data Seeding Function ---
-export async function seedDatabaseIfNeeded() {
+function requireTenant(scope: TenantScope): void {
+  if (!scope.systemAdmin && !scope.tenantId) {
+    throw new Error('A empresa do usuário autenticado não foi encontrada.');
+  }
+}
+
+function canSeeAllOrders(user?: Usuario): boolean {
+  return Boolean(user && (user.role === 'Administrador' || (user.permissoes?.verTodasVendas ?? user.role === 'Representante')));
+}
+
+export function scopedCollection(name: string, scope: TenantScope, owner?: Usuario): Query {
+  requireTenant(scope);
+  const base = collection(db, name);
+  let scoped: Query;
+  if (scope.systemAdmin && scope.tenantId === 'all') scoped = base;
+  else if (name === 'empresas') scoped = query(base, where('id', '==', scope.tenantId));
+  else scoped = query(base, where('empresaRepresentacaoId', '==', scope.tenantId));
+  if (name === 'pedidos' && !scope.systemAdmin && owner?.id && !canSeeAllOrders(owner)) {
+    const userIds = Array.from(new Set([owner.id, owner.legacyId].filter((id): id is string => Boolean(id))));
+    return query(scoped, where('createdByUserId', 'in', userIds));
+  }
+  return scoped;
+}
+
+function toUserProfile(data: Record<string, any>, id: string): Usuario {
+  const { senha: _password, gmailUser: _gmailUser, gmailAppPass: _gmailPass, ...safeData } = data;
+  return { ...safeData, id } as Usuario;
+}
+
+/**
+ * Resolves an authenticated Firebase identity to a protected tenant profile.
+ * Existing users whose old profile is keyed by a legacy ID are copied to the
+ * Auth UID only after they verify ownership of that email address. The
+ * Firestore rules enforce that the copied role and tenant match that source.
+ */
+export async function resolveUserProfile(user: FirebaseUser): Promise<Usuario> {
+  if (!user.emailVerified || !user.email) {
+    throw new Error('Confirme seu e-mail antes de acessar o sistema.');
+  }
+
+  if (isSystemAdminAccount(user)) {
+    return {
+      id: user.uid,
+      nome: user.displayName || 'Raul Soares',
+      email: user.email,
+      role: 'Administrador',
+      ativo: true,
+    };
+  }
+
+  const uidRef = doc(db, 'usuarios', user.uid);
   try {
-    // Check if companies exist
-    const empresasSnap = await getDocs(collection(db, 'empresas'));
-    if (empresasSnap.empty) {
-      console.log('Seeding initial data to Firestore...');
-      
-      const batch = writeBatch(db);
-
-      // Seed Empresas
-      SEED_EMPRESAS.forEach(emp => {
-        batch.set(doc(db, 'empresas', emp.id), emp);
-      });
-
-      // Seed Usuarios
-      SEED_USUARIOS.forEach(usr => {
-        batch.set(doc(db, 'usuarios', usr.id), usr);
-      });
-
-      // Seed Representadas
-      SEED_REPRESENTADAS.forEach(rep => {
-        batch.set(doc(db, 'representadas', rep.id), rep);
-      });
-
-      // Seed Clientes
-      SEED_CLIENTES.forEach(cli => {
-        batch.set(doc(db, 'clientes', cli.id), cli);
-      });
-
-      // Seed Produtos
-      SEED_PRODUTOS.forEach(prod => {
-        batch.set(doc(db, 'produtos', prod.id), prod);
-      });
-
-      // Seed Pedidos
-      SEED_PEDIDOS.forEach(ped => {
-        batch.set(doc(db, 'pedidos', ped.id), ped);
-      });
-
-      // Seed Meta
-      // Meta is a special single-document or collection. Let's seed a default document.
-      batch.set(doc(db, 'meta', 'meta-global'), SEED_METAS);
-
-      await batch.commit();
-      console.log('Database seeded successfully!');
+    const uidSnapshot = await readDocument(uidRef);
+    if (uidSnapshot.exists()) {
+      const profile = toUserProfile(uidSnapshot.data(), user.uid);
+      if (!profile.ativo || profile.email.toLowerCase() !== user.email.toLowerCase()) {
+        throw new Error('Este acesso está inativo ou não corresponde ao e-mail autenticado.');
+      }
+      return profile;
     }
+
+    const matchingProfiles = await readQuery(
+      query(collection(db, 'usuarios'), where('email', '==', user.email), where('ativo', '==', true)),
+    );
+    const sources = matchingProfiles.docs.filter((item) => item.id !== user.uid && item.data().ativo === true);
+    if (sources.length > 1) {
+      throw new Error('Há mais de um convite ativo para este e-mail. Peça ao administrador para revisar os cadastros duplicados.');
+    }
+    const source = sources[0];
+    if (!source) {
+      throw new Error('Não encontrei um convite ativo para este e-mail. Peça ao administrador da empresa para cadastrá-lo.');
+    }
+
+    const sourceData = source.data();
+    if (!sourceData.empresaRepresentacaoId) {
+      throw new Error('O cadastro ainda não está vinculado a uma empresa. Peça ao administrador para corrigir o convite.');
+    }
+
+    const profileData = removeUndefinedFields({
+      ...toUserProfile(sourceData, user.uid),
+      id: user.uid,
+      email: user.email,
+      legacyId: source.id,
+    });
+    await setDoc(uidRef, profileData);
+
+    // The legacy password was plaintext. Remove it as soon as the verified
+    // account has a UID-bound profile. The bulk cleanup script handles users
+    // who have not signed in yet.
+    const secretFields = ['senha', 'gmailUser', 'gmailAppPass'] as const;
+    const cleanup = Object.fromEntries(secretFields
+      .filter((field) => Object.prototype.hasOwnProperty.call(sourceData, field))
+      .map((field) => [field, deleteField()]));
+    if (Object.keys(cleanup).length > 0) {
+      await updateDoc(source.ref, cleanup);
+    }
+
+    return profileData as Usuario;
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, 'all-seeding');
+    handleFirestoreError(error, OperationType.GET, 'usuarios');
   }
 }
 
-// --- Representadas API ---
-export async function getRepresentadas(): Promise<Representada[]> {
+function tenantQuery(name: string, scope: TenantScope): Query {
+  return scopedCollection(name, scope);
+}
+
+async function getTenantRecords<T>(name: string, scope: TenantScope, forceServer = false): Promise<T[]> {
+  requireTenant(scope);
   try {
-    const snap = await getDocs(collection(db, 'representadas'));
-    return snap.docs.map(doc => doc.data() as Representada);
+    const snapshot = await readQuery(tenantQuery(name, scope), forceServer);
+    return snapshot.docs.map((item) => item.data() as T);
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'representadas');
-    return [];
+    handleFirestoreError(error, OperationType.LIST, name);
   }
+}
+
+export async function getRepresentadas(scope: TenantScope, forceServer = false): Promise<Representada[]> {
+  return getTenantRecords<Representada>('representadas', scope, forceServer);
 }
 
 export async function saveRepresentada(rep: Representada): Promise<void> {
   try {
-    const cleanRep = { ...rep };
-    if (cleanRep.catalogoUrl && cleanRep.catalogoUrl.startsWith('data:') && cleanRep.catalogoUrl.length > 500000) {
-      cleanRep.catalogoUrl = `indexeddb:${cleanRep.id}`;
-    }
-    await setDoc(doc(db, 'representadas', cleanRep.id), removeUndefinedFields(cleanRep));
+    await setDoc(doc(db, 'representadas', rep.id), removeUndefinedFields(rep));
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `representadas/${rep.id}`);
+    handleFirestoreError(error, OperationType.WRITE, 'representadas');
   }
 }
 
@@ -180,26 +311,19 @@ export async function deleteRepresentada(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'representadas', id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `representadas/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, 'representadas');
   }
 }
 
-// --- Clientes API ---
-export async function getClientes(): Promise<Cliente[]> {
-  try {
-    const snap = await getDocs(collection(db, 'clientes'));
-    return snap.docs.map(doc => doc.data() as Cliente);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'clientes');
-    return [];
-  }
+export async function getClientes(scope: TenantScope, forceServer = false): Promise<Cliente[]> {
+  return getTenantRecords<Cliente>('clientes', scope, forceServer);
 }
 
 export async function saveCliente(cli: Cliente): Promise<void> {
   try {
     await setDoc(doc(db, 'clientes', cli.id), removeUndefinedFields(cli));
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `clientes/${cli.id}`);
+    handleFirestoreError(error, OperationType.WRITE, 'clientes');
   }
 }
 
@@ -207,18 +331,17 @@ export async function deleteCliente(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'clientes', id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `clientes/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, 'clientes');
   }
 }
 
-// --- Pedidos API ---
-export async function getPedidos(): Promise<Pedido[]> {
+export async function getPedidos(scope: TenantScope, user?: Usuario, forceServer = false): Promise<Pedido[]> {
+  const scoped = scopedCollection('pedidos', scope, user);
   try {
-    const snap = await getDocs(collection(db, 'pedidos'));
-    return snap.docs.map(doc => doc.data() as Pedido);
+    const snapshot = await readQuery(scoped, forceServer);
+    return snapshot.docs.map((item) => item.data() as Pedido);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'pedidos');
-    return [];
   }
 }
 
@@ -226,7 +349,7 @@ export async function savePedido(ped: Pedido): Promise<void> {
   try {
     await setDoc(doc(db, 'pedidos', ped.id), removeUndefinedFields(ped));
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `pedidos/${ped.id}`);
+    handleFirestoreError(error, OperationType.WRITE, 'pedidos');
   }
 }
 
@@ -234,26 +357,19 @@ export async function deletePedido(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'pedidos', id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `pedidos/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, 'pedidos');
   }
 }
 
-// --- Produtos API ---
-export async function getProdutos(): Promise<Produto[]> {
-  try {
-    const snap = await getDocs(collection(db, 'produtos'));
-    return snap.docs.map(doc => doc.data() as Produto);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'produtos');
-    return [];
-  }
+export async function getProdutos(scope: TenantScope, forceServer = false): Promise<Produto[]> {
+  return getTenantRecords<Produto>('produtos', scope, forceServer);
 }
 
 export async function saveProduto(prod: Produto): Promise<void> {
   try {
     await setDoc(doc(db, 'produtos', prod.id), removeUndefinedFields(prod));
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `produtos/${prod.id}`);
+    handleFirestoreError(error, OperationType.WRITE, 'produtos');
   }
 }
 
@@ -261,26 +377,36 @@ export async function deleteProduto(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'produtos', id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `produtos/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, 'produtos');
   }
 }
 
-// --- Empresas API ---
-export async function getEmpresas(): Promise<EmpresaRepresentacao[]> {
+export async function getEmpresas(scope: TenantScope, forceServer = false): Promise<EmpresaRepresentacao[]> {
   try {
-    const snap = await getDocs(collection(db, 'empresas'));
-    return snap.docs.map(doc => doc.data() as EmpresaRepresentacao);
+    if (scope.systemAdmin && scope.tenantId === 'all') {
+      const snapshot = await readQuery(collection(db, 'empresas'), forceServer);
+      return snapshot.docs.map((item) => item.data() as EmpresaRepresentacao);
+    }
+    requireTenant(scope);
+    const snapshot = await readDocument(doc(db, 'empresas', scope.tenantId), forceServer);
+    return snapshot.exists() ? [snapshot.data() as EmpresaRepresentacao] : [];
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'empresas');
-    return [];
   }
+}
+
+function safeEmpresa(emp: EmpresaRepresentacao): Record<string, unknown> {
+  const clean = { ...emp } as Record<string, unknown>;
+  delete clean.gmailUser;
+  delete clean.gmailAppPass;
+  return removeUndefinedFields(clean);
 }
 
 export async function saveEmpresa(emp: EmpresaRepresentacao): Promise<void> {
   try {
-    await setDoc(doc(db, 'empresas', emp.id), removeUndefinedFields(emp));
+    await setDoc(doc(db, 'empresas', emp.id), safeEmpresa(emp));
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `empresas/${emp.id}`);
+    handleFirestoreError(error, OperationType.WRITE, 'empresas');
   }
 }
 
@@ -288,130 +414,86 @@ export async function deleteEmpresa(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'empresas', id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `empresas/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, 'empresas');
   }
 }
 
-// --- Usuarios API ---
-export async function getUsuarios(): Promise<Usuario[]> {
+export async function getUsuarios(scope: TenantScope, currentUser: Usuario, canManageUsers: boolean, forceServer = false): Promise<Usuario[]> {
+  const result = new Map<string, Usuario>([[currentUser.id, currentUser]]);
+  if (!canManageUsers) return Array.from(result.values());
   try {
-    const snap = await getDocs(collection(db, 'usuarios'));
-    const list = snap.docs.map(doc => doc.data() as Usuario);
-
-    // Normalize any "Raul" user to have 'usr-raul' id.
-    const normalizedList = list.map(u => {
-      if (u.id === 'usr-raul' || u.nome?.toLowerCase() === 'raul' || u.email?.toLowerCase() === 'raul') {
-        const cleaned: Usuario = {
-          ...u,
-          id: 'usr-raul',
-          nome: 'Raul',
-          email: 'raul',
-          role: 'Administrador',
-          ativo: true,
-          senha: '230213'
-        };
-        // Remove representation ID if present
-        delete cleaned.empresaRepresentacaoId;
-        return cleaned;
-      }
-      return u;
+    const snapshot = await readQuery(tenantQuery('usuarios', scope), forceServer);
+    const documents = snapshot.docs.map((item) => ({ id: item.id, data: item.data() }));
+    const linkedLegacyIds = new Set<string>(documents.map(({ data }) => data.legacyId).filter((id): id is string => typeof id === 'string'));
+    documents.forEach(({ id, data }) => {
+      const user = toUserProfile(data, id);
+      // Hide only an invitation that has already been linked to its Auth UID.
+      if (id !== currentUser.id && !linkedLegacyIds.has(id)) result.set(user.id, user);
     });
-
-    // Deduplicate by ID
-    const uniqueMap = new Map<string, Usuario>();
-    for (const u of normalizedList) {
-      if (!uniqueMap.has(u.id)) {
-        uniqueMap.set(u.id, u);
-      }
-    }
-    const deduplicatedList = Array.from(uniqueMap.values());
-
-    const raulIdx = deduplicatedList.findIndex(u => u.id === 'usr-raul');
-    if (raulIdx === -1) {
-      const raulUser: Usuario = {
-        id: 'usr-raul',
-        nome: 'Raul',
-        email: 'raul',
-        role: 'Administrador',
-        ativo: true,
-        senha: '230213'
-      };
-      // Use silent background save
-      saveUsuario(raulUser).catch(err => console.warn("Erro ao salvar Raul no Firestore:", err));
-      deduplicatedList.push(raulUser);
-    } else {
-      // Correct existing Raul if it was misconfigured
-      const correctRaul = deduplicatedList[raulIdx];
-      saveUsuario(correctRaul).catch(err => console.warn("Erro ao atualizar Raul no Firestore:", err));
-    }
-    return deduplicatedList;
+    return Array.from(result.values());
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'usuarios');
-    return [];
   }
 }
 
-export async function saveUsuario(usr: Usuario): Promise<void> {
+export async function saveUsuario(user: Usuario): Promise<void> {
   try {
-    let cleanUser = { ...usr };
-    if (usr.id === 'usr-raul' || usr.nome?.toLowerCase() === 'raul' || usr.email?.toLowerCase() === 'raul') {
-      cleanUser = {
-        ...usr,
-        id: 'usr-raul',
-        nome: 'Raul',
-        email: 'raul',
-        role: 'Administrador',
-        ativo: true,
-        senha: '230213'
-      };
-      delete cleanUser.empresaRepresentacaoId;
-    }
-    await setDoc(doc(db, 'usuarios', cleanUser.id), removeUndefinedFields(cleanUser));
+    const clean = { ...user } as Record<string, unknown>;
+    delete clean.senha;
+    delete clean.gmailUser;
+    delete clean.gmailAppPass;
+    await setDoc(doc(db, 'usuarios', user.id), removeUndefinedFields(clean));
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `usuarios/${usr.id}`);
+    handleFirestoreError(error, OperationType.WRITE, 'usuarios');
   }
 }
 
 export async function deleteUsuario(id: string): Promise<void> {
   try {
+    const target = await readDocument(doc(db, 'usuarios', id));
+    const legacyId = target.exists() ? target.data().legacyId : undefined;
+    if (typeof legacyId === 'string' && legacyId !== id) {
+      await deleteDoc(doc(db, 'usuarios', legacyId));
+    }
     await deleteDoc(doc(db, 'usuarios', id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `usuarios/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, 'usuarios');
   }
 }
 
-// --- Meta API ---
-export async function getMeta(): Promise<MetaVendas> {
+export async function getMeta(scope: TenantScope, forceServer = false): Promise<MetaVendas> {
+  if (!scope.systemAdmin) requireTenant(scope);
   try {
-    const snap = await getDocs(collection(db, 'meta'));
-    if (!snap.empty) {
-      return snap.docs[0].data() as MetaVendas;
-    }
-    return SEED_METAS;
+    const snapshot = await readQuery(scope.systemAdmin && scope.tenantId === 'all'
+      ? collection(db, 'meta')
+      : tenantQuery('meta', scope), forceServer);
+    if (!snapshot.empty) return snapshot.docs[0].data() as MetaVendas;
+    return { metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId };
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, 'meta');
-    return SEED_METAS;
   }
 }
 
-export async function saveMeta(metaVal: MetaVendas): Promise<void> {
+export async function saveMeta(meta: MetaVendas): Promise<void> {
+  if (!meta.empresaRepresentacaoId) throw new Error('A meta precisa estar vinculada a uma empresa.');
   try {
-    await setDoc(doc(db, 'meta', 'meta-global'), removeUndefinedFields(metaVal));
+    const id = `meta-${meta.empresaRepresentacaoId}`;
+    await setDoc(doc(db, 'meta', id), removeUndefinedFields({ ...meta, id }));
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, 'meta/meta-global');
+    handleFirestoreError(error, OperationType.WRITE, 'meta');
   }
 }
 
 export async function testarConexaoFirebase(usuarioEmail?: string): Promise<string> {
   try {
-    const docRef = await addDoc(collection(db, 'teste_conexao'), {
+    const result = await addDoc(collection(db, 'teste_conexao'), {
       data: new Date().toISOString(),
       mensagem: 'Conexão efetuada com sucesso a partir do RepresentaPRO',
-      usuario: usuarioEmail || 'Anonimo'
+      usuario: usuarioEmail || auth.currentUser?.email || 'Autenticado',
+      uid: auth.currentUser?.uid || '',
     });
-    return docRef.id;
+    return result.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'teste_conexao');
-    throw error;
   }
 }

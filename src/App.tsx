@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { onSnapshot, collection } from 'firebase/firestore';
-import { 
-  LayoutDashboard, 
-  Briefcase, 
-  Users, 
-  ShoppingCart, 
-  Landmark, 
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onSnapshot } from 'firebase/firestore';
+import {
+  LayoutDashboard,
+  Briefcase,
+  Users,
+  ShoppingCart,
+  Landmark,
   AlertCircle,
   Tag,
   ShieldCheck,
@@ -15,23 +16,12 @@ import {
   BellRing,
   Info,
   RefreshCw,
-  X as CloseIcon
+  X as CloseIcon,
 } from 'lucide-react';
 import { formatarMoeda, getUserPermissions } from './utils';
 import { motion, AnimatePresence } from 'motion/react';
-
-// Import Types
 import { Representada, Cliente, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao } from './types';
-
-// Import Seeds
-import { 
-  SEED_REPRESENTADAS, 
-  SEED_CLIENTES, 
-  SEED_PEDIDOS, 
-  SEED_METAS,
-  SEED_PRODUTOS,
-  SEED_EMPRESAS,
-  SEED_USUARIOS,
+import {
   DEMO_EMPRESA_ID,
   DEMO_REPRESENTADAS,
   DEMO_CLIENTES,
@@ -40,11 +30,14 @@ import {
   DEMO_PRODUTOS,
   DEMO_EMPRESAS,
   DEMO_USUARIOS,
-  DEMO_NOTIFICACOES
+  DEMO_NOTIFICACOES,
 } from './data';
-
-import { 
-  seedDatabaseIfNeeded,
+import {
+  auth,
+  resolveUserProfile,
+  isSystemAdminAccount,
+  scopedCollection,
+  TenantScope,
   getRepresentadas,
   saveRepresentada,
   deleteRepresentada,
@@ -65,11 +58,9 @@ import {
   deleteUsuario,
   getMeta,
   saveMeta,
-  db,
-  testarConexaoFirebase
+  clearOfflineFirestoreCache,
+  waitForOfflineWritesToSync,
 } from './firebase';
-
-// Import Subcomponents
 import DashboardTab from './components/DashboardTab';
 import RepresentadasTab from './components/RepresentadasTab';
 import ClientesTab from './components/ClientesTab';
@@ -79,89 +70,78 @@ import FinanceiroTab from './components/FinanceiroTab';
 import AdminTab from './components/AdminTab';
 import LoginScreen from './components/LoginScreen';
 
+function isTemporaryConnectionError(error: any): boolean {
+  const details = `${error?.code || ''} ${error?.message || error || ''}`;
+  return (typeof navigator !== 'undefined' && !navigator.onLine)
+    || /network|unavailable|offline|timed out|deadline|could not reach/i.test(details);
+}
+
 export default function App() {
   const isDemoMode =
     typeof window !== 'undefined' &&
     ['1', 'true'].includes(new URLSearchParams(window.location.search).get('demo') || '');
 
-  // --- Core Persistent States ---
-  const [representadas, setRepresentadas] = useState<Representada[]>(() => {
-    if (isDemoMode) return DEMO_REPRESENTADAS;
-    const saved = localStorage.getItem('rep_representadas');
-    const items = saved ? JSON.parse(saved) : SEED_REPRESENTADAS;
-    return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
-  });
+  // Production state starts empty and is populated only after Firebase Auth
+  // resolves a verified UID-bound profile. Demo data is local and synthetic.
+  const [representadas, setRepresentadas] = useState<Representada[]>(() => isDemoMode ? DEMO_REPRESENTADAS : []);
+  const [clientes, setClientes] = useState<Cliente[]>(() => isDemoMode ? DEMO_CLIENTES : []);
+  const [pedidos, setPedidos] = useState<Pedido[]>(() => isDemoMode ? DEMO_PEDIDOS : []);
+  const [meta, setMeta] = useState<MetaVendas>(() => isDemoMode ? DEMO_METAS : { metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7) });
+  const [produtos, setProdutos] = useState<Produto[]>(() => isDemoMode ? DEMO_PRODUTOS : []);
+  const [empresas, setEmpresas] = useState<EmpresaRepresentacao[]>(() => isDemoMode ? DEMO_EMPRESAS : []);
+  const [activeEmpresaId, setActiveEmpresaId] = useState<string>(() => isDemoMode ? DEMO_EMPRESA_ID : '');
+  const [usuarios, setUsuarios] = useState<Usuario[]>(() => isDemoMode ? DEMO_USUARIOS : []);
+  const [currentUser, setCurrentUser] = useState<Usuario | null>(() => isDemoMode ? DEMO_USUARIOS[0] : null);
+  const currentUserId = currentUser?.id || '';
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(isDemoMode);
+  const [authReady, setAuthReady] = useState<boolean>(isDemoMode);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [isUsingCachedData, setIsUsingCachedData] = useState(false);
+  const [hasPendingSync, setHasPendingSync] = useState(false);
+  const snapshotSyncState = React.useRef<Record<string, { fromCache: boolean; hasPendingWrites: boolean }>>({});
 
-  const [clientes, setClientes] = useState<Cliente[]>(() => {
-    if (isDemoMode) return DEMO_CLIENTES;
-    const saved = localStorage.getItem('rep_clientes');
-    const items = saved ? JSON.parse(saved) : SEED_CLIENTES;
-    return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
-  });
+  useEffect(() => {
+    const updateConnection = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateConnection);
+    window.addEventListener('offline', updateConnection);
+    return () => {
+      window.removeEventListener('online', updateConnection);
+      window.removeEventListener('offline', updateConnection);
+    };
+  }, []);
 
-  const [pedidos, setPedidos] = useState<Pedido[]>(() => {
-    if (isDemoMode) return DEMO_PEDIDOS;
-    const saved = localStorage.getItem('rep_pedidos');
-    const items = saved ? JSON.parse(saved) : SEED_PEDIDOS;
-    return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
-  });
-
-  const [meta, setMeta] = useState<MetaVendas>(() => {
-    if (isDemoMode) return DEMO_METAS;
-    const saved = localStorage.getItem('rep_meta');
-    return saved ? JSON.parse(saved) : SEED_METAS;
-  });
-
-  const [produtos, setProdutos] = useState<Produto[]>(() => {
-    if (isDemoMode) return DEMO_PRODUTOS;
-    const saved = localStorage.getItem('rep_produtos');
-    const items = saved ? JSON.parse(saved) : SEED_PRODUTOS;
-    return items.map((i: any) => ({ ...i, empresaRepresentacaoId: i.empresaRepresentacaoId || 'emp-1' }));
-  });
-
-  // --- Multi-Company & User Access Management States ---
-  const [empresas, setEmpresas] = useState<EmpresaRepresentacao[]>(() => {
-    if (isDemoMode) return DEMO_EMPRESAS;
-    const saved = localStorage.getItem('rep_empresas');
-    return saved ? JSON.parse(saved) : SEED_EMPRESAS;
-  });
-
-  const [activeEmpresaId, setActiveEmpresaId] = useState<string>(() => {
-    if (isDemoMode) return DEMO_EMPRESA_ID;
-    const saved = localStorage.getItem('rep_active_empresa_id');
-    if (saved) return saved;
-    const defaultEmp = SEED_EMPRESAS.find(e => e.isDefault);
-    return defaultEmp?.id || 'emp-1';
-  });
-
-  const [usuarios, setUsuarios] = useState<Usuario[]>(() => {
-    if (isDemoMode) return DEMO_USUARIOS;
-    const saved = localStorage.getItem('rep_usuarios');
-    const parsed = saved ? JSON.parse(saved) : SEED_USUARIOS;
-    const unique = new Map();
-    parsed.forEach((u: Usuario) => {
-      if (!unique.has(u.id)) unique.set(u.id, u);
-    });
-    return Array.from(unique.values());
-  });
-
-  const [currentUserId, setCurrentUserId] = useState<string>(() => {
-    if (isDemoMode) return 'demo-admin';
-    const saved = localStorage.getItem('rep_current_user_id');
-    return saved || 'usr-1';
-  });
-
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (isDemoMode) return true;
-    const saved = localStorage.getItem('rep_is_authenticated');
-    return saved === 'true';
-  });
+  useEffect(() => {
+    if (isDemoMode) return;
+    const removeSecrets = (value: any): any => {
+      if (Array.isArray(value)) return value.map(removeSecrets);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value)
+          .filter(([key]) => !['senha', 'gmailUser', 'gmailAppPass'].includes(key))
+          .map(([key, nested]) => [key, removeSecrets(nested)]));
+      }
+      return value;
+    };
+    for (const key of ['rep_usuarios', 'rep_empresas']) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const safeRecords = removeSecrets(JSON.parse(raw));
+        localStorage.setItem(key, JSON.stringify(safeRecords));
+      } catch {
+        localStorage.removeItem(key);
+      }
+    }
+    localStorage.removeItem('rep_current_user_id');
+    localStorage.removeItem('rep_is_authenticated');
+    localStorage.removeItem('rep_active_empresa_id');
+  }, [isDemoMode]);
 
   // --- UI Navigation & Active States ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'representadas' | 'clientes' | 'pedidos' | 'produtos' | 'financeiro' | 'admin'>('dashboard');
   const [activePedidoToEdit, setActivePedidoToEdit] = useState<Pedido | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!isDemoMode);
   const [showRulesGuide, setShowRulesGuide] = useState<boolean>(false);
   const [hasPermissionError, setHasPermissionError] = useState<boolean>(false);
 
@@ -175,21 +155,12 @@ export default function App() {
     read: boolean;
   }
 
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-    if (isDemoMode) return DEMO_NOTIFICACOES;
-    const saved = localStorage.getItem('rep_notifications');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => isDemoMode ? DEMO_NOTIFICACOES : []);
   const [showNotificationsMenu, setShowNotificationsMenu] = useState(false);
   const [activeToast, setActiveToast] = useState<AppNotification | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
     return 'Notification' in window ? Notification.permission : 'unsupported';
   });
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    try { localStorage.setItem('rep_notifications', JSON.stringify(notifications)); } catch(e) { console.error('rep_notifications', e); }
-  }, [notifications]);
 
   const triggerAppNotification = (title: string, message: string, type: 'order' | 'commission') => {
     const newNotif: AppNotification = {
@@ -242,290 +213,283 @@ export default function App() {
     }
   };
 
-  // --- LocalStorage Synchronization ---
-  useEffect(() => {
-    if (isDemoMode) return;
-    try {
-      const sanitized = representadas.map(rep => {
-        if (rep.catalogoUrl && rep.catalogoUrl.startsWith('data:') && rep.catalogoUrl.length > 500000) {
-          return { ...rep, catalogoUrl: `indexeddb:${rep.id}` };
-        }
-        return rep;
-      });
-      localStorage.setItem('rep_representadas', JSON.stringify(sanitized));
-    } catch(e) { console.error('rep_representadas', e); }
-  }, [representadas]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    try { localStorage.setItem('rep_clientes', JSON.stringify(clientes)); } catch(e) { console.error('rep_clientes', e); }
-  }, [clientes]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    try { localStorage.setItem('rep_pedidos', JSON.stringify(pedidos)); } catch(e) { console.error('rep_pedidos', e); }
-  }, [pedidos]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    try { localStorage.setItem('rep_meta', JSON.stringify(meta)); } catch(e) { console.error('rep_meta', e); }
-  }, [meta]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    try {
-      // Keep photos in Firestore; avoid filling the browser's small localStorage quota.
-      const produtosSemFotos = produtos.map(({ fotoUrl: _fotoUrl, ...produto }) => produto);
-      localStorage.setItem('rep_produtos', JSON.stringify(produtosSemFotos));
-    } catch(e) { console.error('rep_produtos', e); }
-  }, [produtos]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    try { localStorage.setItem('rep_empresas', JSON.stringify(empresas)); } catch(e) { console.error('rep_empresas', e); }
-  }, [empresas]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    localStorage.setItem('rep_active_empresa_id', activeEmpresaId);
-  }, [activeEmpresaId]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    try { try { localStorage.setItem('rep_usuarios', JSON.stringify(usuarios)); } catch(e) { console.error('rep_usuarios', e); } } catch(e) { console.error("usuarios", e); }
-  }, [usuarios]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    localStorage.setItem('rep_current_user_id', currentUserId);
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    localStorage.setItem('rep_is_authenticated', isAuthenticated ? 'true' : 'false');
-  }, [isAuthenticated]);
-
+  // Firebase Auth restores its local session so the previously cached profile
+  // and tenant data can open while offline. Online refreshes still revalidate
+  // the account, and Firestore rules remain authoritative for server requests.
   useEffect(() => {
     if (isDemoMode) {
+      setAuthReady(true);
       setLoading(false);
       return;
     }
-    async function initFirestoreData() {
+
+    let attemptId = 0;
+    const resolveAuthenticatedUser = async (firebaseUser: NonNullable<typeof auth.currentUser>) => {
+      const currentAttempt = ++attemptId;
+      setLoading(true);
       try {
-        await seedDatabaseIfNeeded();
-
-        const [
-          repData,
-          cliData,
-          pedData,
-          prodData,
-          empData,
-          usrData,
-          metaData
-        ] = await Promise.all([
-          getRepresentadas(),
-          getClientes(),
-          getPedidos(),
-          getProdutos(),
-          getEmpresas(),
-          getUsuarios(),
-          getMeta()
-        ]);
-
-        if (repData.length > 0) setRepresentadas(repData);
-        if (cliData.length > 0) setClientes(cliData);
-        if (pedData.length > 0) setPedidos(pedData);
-        if (prodData.length > 0) setProdutos(prodData);
-        if (empData.length > 0) setEmpresas(empData);
-        if (usrData.length > 0) setUsuarios(usrData);
-        if (metaData) setMeta(metaData);
-      } catch (err: any) {
-        console.error('Error synchronizing with Firestore:', err);
-        const errMsg = err?.message || String(err);
-        if (errMsg.includes('permissions') || errMsg.includes('insufficient') || errMsg.includes('denied')) {
-          setHasPermissionError(true);
-          setErrorMessage('Erro de Permissões no Firestore (representapro-b84c3). Clique em "Como Resolver" para configurar as regras.');
-        } else {
-          setErrorMessage('Falha ao sincronizar dados com o Firestore. Rodando em modo local offline.');
-        }
+        const profile = await resolveUserProfile(firebaseUser);
+        if (!profile.ativo) throw new Error('Este usuário foi desativado. Fale com o administrador da empresa.');
+        if (currentAttempt !== attemptId) return;
+        setCurrentUser(profile);
+        setUsuarios([profile]);
+        setActiveEmpresaId(isSystemAdminAccount(firebaseUser) ? 'all' : (profile.empresaRepresentacaoId || ''));
+        setIsAuthenticated(true);
+        setSessionError(null);
+      } catch (error: any) {
+        if (currentAttempt !== attemptId) return;
+        const message = error?.message || 'Não foi possível validar o acesso deste usuário.';
+        const temporaryConnectionFailure = isTemporaryConnectionError(error);
+        if (!temporaryConnectionFailure) await signOut(auth).catch(() => undefined);
+        setCurrentUser(null);
+        setUsuarios([]);
+        setIsAuthenticated(false);
+        setSessionError(temporaryConnectionFailure
+          ? 'Sem conexão. Este aparelho precisa ter acessado a conta online ao menos uma vez para guardar o perfil e os dados. Tentaremos novamente quando a internet voltar.'
+          : message);
       } finally {
-        setLoading(false);
+        if (currentAttempt === attemptId) {
+          setAuthReady(true);
+          setLoading(false);
+        }
       }
-    }
-    initFirestoreData();
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
+        attemptId += 1;
+        setCurrentUser(null);
+        setUsuarios([]);
+        setIsAuthenticated(false);
+        setActiveEmpresaId('');
+        setSessionError(null);
+        setAuthReady(true);
+        setLoading(false);
+        return;
+      }
+      void resolveAuthenticatedUser(firebaseUser);
+    });
+
+    const retryWhenOnline = () => {
+      if (auth.currentUser) void resolveAuthenticatedUser(auth.currentUser);
+    };
+    window.addEventListener('online', retryWhenOnline);
+    return () => {
+      attemptId += 1;
+      unsubscribe();
+      window.removeEventListener('online', retryWhenOnline);
+    };
   }, [isDemoMode]);
 
-  // --- Real-time Firestore Subscription with Push Notifications ---
-  const isFirstSnapshot = React.useRef(true);
+  const systemAdmin = !isDemoMode && isSystemAdminAccount(auth.currentUser);
+  const tenantScope: TenantScope = {
+    tenantId: systemAdmin ? activeEmpresaId : (currentUser?.empresaRepresentacaoId || ''),
+    systemAdmin,
+  };
+  const canManageUsers = Boolean(systemAdmin || currentUser?.role === 'Administrador' || currentUser?.permissoes?.gerenciarUsuarios);
 
-  // We use Refs to keep the latest state versions available inside the snapshot listener without triggering infinite recreation of the subscription
+  // Initial reads are tenant-scoped in Firestore. The UI filter below is only
+  // presentation; the security rules independently enforce the same boundary.
+  useEffect(() => {
+    if (isDemoMode) return;
+    if (!authReady || !isAuthenticated || !currentUser) {
+      setRepresentadas([]);
+      setClientes([]);
+      setPedidos([]);
+      setProdutos([]);
+      setEmpresas([]);
+      setUsuarios([]);
+      return;
+    }
+
+    const scope: TenantScope = {
+      tenantId: systemAdmin ? activeEmpresaId : (currentUser.empresaRepresentacaoId || ''),
+      systemAdmin,
+    };
+    if (!scope.systemAdmin && !scope.tenantId) {
+      setErrorMessage('O usuário autenticado ainda não está vinculado a uma empresa.');
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const dataPermissions = getUserPermissions(currentUser);
+    setLoading(true);
+    setRepresentadas([]);
+    setClientes([]);
+    setPedidos([]);
+    setProdutos([]);
+    setEmpresas([]);
+    setUsuarios([currentUser]);
+
+    Promise.all([
+      dataPermissions.verRepresentadas ? getRepresentadas(scope) : Promise.resolve([]),
+      dataPermissions.verClientes ? getClientes(scope) : Promise.resolve([]),
+      getPedidos(scope, currentUser),
+      dataPermissions.verProdutos ? getProdutos(scope) : Promise.resolve([]),
+      getEmpresas(scope),
+      getUsuarios(scope, currentUser, canManageUsers),
+      dataPermissions.verFinanceiro ? getMeta(scope) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
+    ]).then(([repData, cliData, pedData, prodData, empData, usrData, metaData]) => {
+      if (cancelled) return;
+      setRepresentadas(repData);
+      setClientes(cliData);
+      setPedidos(pedData);
+      setProdutos(prodData);
+      setEmpresas(empData);
+      setUsuarios(usrData);
+      setMeta(metaData);
+      setErrorMessage(null);
+      setHasPermissionError(false);
+    }).catch((error: any) => {
+      if (cancelled) return;
+      console.error('Falha ao carregar dados protegidos:', error);
+      const message = error?.message || 'Falha ao carregar dados da empresa.';
+      setHasPermissionError(message.toLowerCase().includes('permission') || message.toLowerCase().includes('denied'));
+      setErrorMessage('Não foi possível carregar os dados autorizados para este usuário. Verifique a conexão e as permissões da conta.');
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [isDemoMode, authReady, isAuthenticated, currentUser?.id, activeEmpresaId, systemAdmin, canManageUsers]);
+
+  // Tenant-scoped live updates. The Firestore rules reject an unfiltered query
+  // for ordinary members, even if someone alters the frontend.
+  const isFirstSnapshot = React.useRef(true);
   const representadasRef = React.useRef(representadas);
   const clientesRef = React.useRef(clientes);
   const pedidosRef = React.useRef(pedidos);
   const activeEmpresaIdRef = React.useRef(activeEmpresaId);
+  useEffect(() => { representadasRef.current = representadas; }, [representadas]);
+  useEffect(() => { clientesRef.current = clientes; }, [clientes]);
+  useEffect(() => { pedidosRef.current = pedidos; }, [pedidos]);
+  useEffect(() => { activeEmpresaIdRef.current = activeEmpresaId; }, [activeEmpresaId]);
 
   useEffect(() => {
-    representadasRef.current = representadas;
-  }, [representadas]);
+    if (isDemoMode || !authReady || !isAuthenticated || !currentUser || loading) return;
+    const scope: TenantScope = {
+      tenantId: systemAdmin ? activeEmpresaId : (currentUser.empresaRepresentacaoId || ''),
+      systemAdmin,
+    };
+    if (!scope.systemAdmin && !scope.tenantId) return;
 
-  useEffect(() => {
-    clientesRef.current = clientes;
-  }, [clientes]);
-
-  useEffect(() => {
-    pedidosRef.current = pedidos;
-  }, [pedidos]);
-
-  useEffect(() => {
-    activeEmpresaIdRef.current = activeEmpresaId;
-  }, [activeEmpresaId]);
-
-  useEffect(() => {
-    if (isDemoMode || loading) return;
-
+    const dataPermissions = getUserPermissions(currentUser);
     isFirstSnapshot.current = true;
+    snapshotSyncState.current = {};
+    setIsUsingCachedData(false);
+    setHasPendingSync(false);
+    const subscriptions: Array<() => void> = [];
+    const subscribe = (name: string, handler: (snapshot: any) => void, owner?: Usuario) => {
+      subscriptions.push(onSnapshot(
+        scopedCollection(name, scope, owner),
+        { includeMetadataChanges: true },
+        (snapshot) => {
+          snapshotSyncState.current[name] = {
+            fromCache: snapshot.metadata.fromCache,
+            hasPendingWrites: snapshot.metadata.hasPendingWrites,
+          };
+          const statuses = Object.values(snapshotSyncState.current) as Array<{ fromCache: boolean; hasPendingWrites: boolean }>;
+          setIsUsingCachedData(statuses.some((status) => status.fromCache));
+          setHasPendingSync(statuses.some((status) => status.hasPendingWrites));
+          handler(snapshot);
+        },
+        (error) => {
+          console.warn(`Atualização protegida indisponível: ${name}`, error.code);
+        },
+      ));
+    };
 
-    const unsubs: any[] = [];
-
-    unsubs.push(onSnapshot(collection(db, 'pedidos'), (snapshot) => {
-      const updatedList: Pedido[] = [];
-      snapshot.forEach((doc) => updatedList.push(doc.data() as Pedido));
-
-      // Avoid triggering notifications on the initial load of existing records
+    subscribe('pedidos', (snapshot) => {
+      const list = snapshot.docs.map((item: any) => item.data() as Pedido);
       if (!isFirstSnapshot.current) {
-        snapshot.docChanges().forEach((change) => {
+        snapshot.docChanges().forEach((change: any) => {
           const data = change.doc.data() as Pedido;
-          
-          if (data.empresaRepresentacaoId === activeEmpresaIdRef.current) {
-            if (change.type === 'added') {
-              const repName = representadasRef.current.find(r => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
-              const cliName = clientesRef.current.find(c => c.id === data.clienteId)?.nomeFantasia || 'Cliente';
-              
-              triggerAppNotification(
-                'Novo Pedido de Venda 📦',
-                `Pedido nº ${data.numeroPedido} (${cliName} ➔ ${repName}) no valor de ${formatarMoeda(data.valorTotal)} foi inserido no sistema.`,
-                'order'
-              );
-            } else if (change.type === 'modified') {
-              const oldVer = pedidosRef.current.find(p => p.id === data.id);
-              if (data.statusComissao === 'Liberada' && (!oldVer || oldVer.statusComissao !== 'Liberada')) {
-                const repName = representadasRef.current.find(r => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
-                triggerAppNotification(
-                  'Comissão Liberada! 💸',
-                  `A comissão de ${formatarMoeda(data.valorComissao)} do pedido nº ${data.numeroPedido} (${repName}) foi liberada pelo administrador.`,
-                  'commission'
-                );
-              }
+          if (data.empresaRepresentacaoId !== activeEmpresaIdRef.current && activeEmpresaIdRef.current !== 'all') return;
+          if (change.type === 'added') {
+            const repName = representadasRef.current.find((r) => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
+            const cliName = clientesRef.current.find((c) => c.id === data.clienteId)?.nomeFantasia || 'Cliente';
+            triggerAppNotification('Novo Pedido de Venda 📦', `Pedido nº ${data.numeroPedido} (${cliName} ➔ ${repName}) no valor de ${formatarMoeda(data.valorTotal)} foi inserido no sistema.`, 'order');
+          } else if (change.type === 'modified') {
+            const previous = pedidosRef.current.find((item) => item.id === data.id);
+            if (data.statusComissao === 'Liberada' && previous?.statusComissao !== 'Liberada') {
+              const repName = representadasRef.current.find((r) => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
+              triggerAppNotification('Comissão Liberada! 💸', `A comissão de ${formatarMoeda(data.valorComissao)} do pedido nº ${data.numeroPedido} (${repName}) foi liberada pelo administrador.`, 'commission');
             }
           }
         });
       }
-
-      setPedidos(updatedList);
+      setPedidos(list);
       isFirstSnapshot.current = false;
-    }, (err) => {
-      console.warn("Erro no snapshot de pedidos (modo offline):", err);
-    }));
-
-    // Sincronização automática de outras coleções
-    unsubs.push(onSnapshot(collection(db, 'clientes'), (snapshot) => {
-      const list: Cliente[] = [];
-      snapshot.forEach(doc => list.push(doc.data() as Cliente));
-      setClientes(list);
-    }));
-    unsubs.push(onSnapshot(collection(db, 'representadas'), (snapshot) => {
-      const list: Representada[] = [];
-      snapshot.forEach(doc => list.push(doc.data() as Representada));
-      setRepresentadas(list);
-    }));
-    unsubs.push(onSnapshot(collection(db, 'produtos'), (snapshot) => {
-      const list: Produto[] = [];
-      snapshot.forEach(doc => list.push(doc.data() as Produto));
-      setProdutos(list);
-    }));
-    unsubs.push(onSnapshot(collection(db, 'empresas'), (snapshot) => {
-      const list: EmpresaRepresentacao[] = [];
-      snapshot.forEach(doc => list.push(doc.data() as EmpresaRepresentacao));
-      setEmpresas(list);
-    }));
-    unsubs.push(onSnapshot(collection(db, 'usuarios'), (snapshot) => {
-      const list: Usuario[] = [];
-      snapshot.forEach(doc => list.push(doc.data() as Usuario));
-      setUsuarios(list);
-    }));
-    unsubs.push(onSnapshot(collection(db, 'meta'), (snapshot) => {
-      snapshot.forEach(doc => {
-        if (doc.id === 'meta-global') {
-          setMeta(doc.data() as MetaVendas);
-        }
+    }, currentUser);
+    if (dataPermissions.verClientes) subscribe('clientes', (snapshot) => setClientes(snapshot.docs.map((item: any) => item.data() as Cliente)));
+    if (dataPermissions.verRepresentadas) subscribe('representadas', (snapshot) => setRepresentadas(snapshot.docs.map((item: any) => item.data() as Representada)));
+    if (dataPermissions.verProdutos) subscribe('produtos', (snapshot) => setProdutos(snapshot.docs.map((item: any) => item.data() as Produto)));
+    subscribe('empresas', (snapshot) => setEmpresas(snapshot.docs.map((item: any) => item.data() as EmpresaRepresentacao)));
+    if (canManageUsers) {
+      subscribe('usuarios', (snapshot) => {
+        const profiles = snapshot.docs.map((item: any) => { const { senha: _password, gmailUser: _gmailUser, gmailAppPass: _gmailPass, ...safe } = item.data(); return { ...safe, id: item.id } as Usuario; });
+        setUsuarios(Array.from(new Map([currentUser, ...profiles].map((profile) => [profile.id, profile])).values()));
       });
-    }));
-
-    return () => unsubs.forEach(unsub => unsub());
-  }, [loading, isDemoMode]);
-
-  // --- Active Selections and Helpers ---
-  const activeEmpresa = empresas.find(e => e.id === activeEmpresaId) || empresas[0];
-  const currentUser = usuarios.find(u => u.id === currentUserId) || usuarios[0];
-
-  useEffect(() => {
-    if ((activeTab === 'admin' || activeTab === 'financeiro') && currentUser?.role !== 'Administrador') {
-      setActiveTab('dashboard');
     }
-  }, [activeTab, currentUser]);
-
-  const handleSelectEmpresa = (id: string) => {
-    setActiveEmpresaId(id);
-    // Auto-select corresponding company user when switching to keep consistency (unless current is Raul)
-    const isRaul = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
-    if (!isRaul) {
-      const companyUser = usuarios.find(u => u.empresaRepresentacaoId === id && u.ativo);
-      if (companyUser) {
-        setCurrentUserId(companyUser.id);
-      }
+    if (dataPermissions.verFinanceiro) {
+      subscribe('meta', (snapshot) => {
+        const matching = scope.tenantId === 'all' ? snapshot.docs[0] : snapshot.docs.find((item: any) => item.data().empresaRepresentacaoId === scope.tenantId);
+        if (matching) setMeta(matching.data() as MetaVendas);
+      });
     }
-  };
 
-  const handleSelectUsuario = (id: string) => {
-    setCurrentUserId(id);
-    const selectedUsr = usuarios.find(u => u.id === id);
-    if (selectedUsr && selectedUsr.empresaRepresentacaoId && selectedUsr.empresaRepresentacaoId !== activeEmpresaId) {
-      setActiveEmpresaId(selectedUsr.empresaRepresentacaoId);
-    }
-  };
+    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+  }, [isDemoMode, authReady, isAuthenticated, currentUser?.id, activeEmpresaId, systemAdmin, canManageUsers, loading]);
 
-  // --- Data Isolation Filter Layers ---
-  // We filter all business collections by activeEmpresaId so different companies NEVER see each other's data!
-  const userPermissions = getUserPermissions(currentUser);
-  const isRaul = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
-  const showAllData = isRaul && activeEmpresaId === 'all';
-
-  const filteredRepresentadas = showAllData ? representadas : representadas.filter(r => r.empresaRepresentacaoId === activeEmpresaId);
-  const filteredClientes = showAllData ? clientes : clientes.filter(c => c.empresaRepresentacaoId === activeEmpresaId);
-  
-  let baseFilteredPedidos = showAllData ? pedidos : pedidos.filter(p => p.empresaRepresentacaoId === activeEmpresaId);
-  if (!userPermissions.verTodasVendas && !showAllData) {
-    baseFilteredPedidos = baseFilteredPedidos.filter(p => p.createdByUserId === currentUser?.id || !p.createdByUserId);
+  // --- Active selections and UI presentation filters ---
+  const activeEmpresa = empresas.find((company) => company.id === activeEmpresaId) || empresas[0];
+  const userPermissions = getUserPermissions(currentUser || undefined);
+  const isRaul = systemAdmin || isDemoMode;
+  const showAllData = systemAdmin && activeEmpresaId === 'all';
+  const filteredRepresentadas = showAllData ? representadas : representadas.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
+  const filteredClientes = showAllData ? clientes : clientes.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
+  let baseFilteredPedidos = showAllData ? pedidos : pedidos.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
+  if (!userPermissions.verTodasVendas && !showAllData && currentUser) {
+    baseFilteredPedidos = baseFilteredPedidos.filter((item) => item.createdByUserId === currentUser.id || item.createdByUserId === currentUser.legacyId);
   }
   const filteredPedidos = baseFilteredPedidos;
+  const filteredProdutos = showAllData ? produtos : produtos.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
 
-  const filteredProdutos = showAllData ? produtos : produtos.filter(p => p.empresaRepresentacaoId === activeEmpresaId);
+  useEffect(() => {
+    const allowed = activeTab === 'dashboard' ? userPermissions.verDashboard
+      : activeTab === 'representadas' ? userPermissions.verRepresentadas
+        : activeTab === 'clientes' ? userPermissions.verClientes
+          : activeTab === 'produtos' ? userPermissions.verProdutos
+            : activeTab === 'financeiro' ? currentUser?.role === 'Administrador' || userPermissions.verFinanceiro
+              : activeTab === 'admin' ? currentUser?.role === 'Administrador'
+                : true;
+    if (!allowed) {
+      const nextTab = userPermissions.verDashboard ? 'dashboard'
+        : userPermissions.verRepresentadas ? 'representadas'
+          : userPermissions.verClientes ? 'clientes'
+            : userPermissions.verProdutos ? 'produtos'
+              : 'pedidos';
+      setActiveTab(nextTab);
+    }
+  }, [activeTab, currentUser?.role, userPermissions.verDashboard, userPermissions.verRepresentadas, userPermissions.verClientes, userPermissions.verProdutos, userPermissions.verFinanceiro]);
+
+  const handleSelectEmpresa = (id: string) => {
+    if (systemAdmin || isDemoMode) setActiveEmpresaId(id);
+  };
 
   // --- Handlers for CRUD ---
   
   // Representadas
   const handleAddRepresentada = async (rep: Representada) => {
-    const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
+    const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
     const withEmp = { ...rep, empresaRepresentacaoId: targetEmpId };
     setRepresentadas([...representadas, withEmp]);
     if (!isDemoMode) await saveRepresentada(withEmp);
   };
   const handleEditRepresentada = async (rep: Representada) => {
     const existing = representadas.find(r => r.id === rep.id);
-    const updated = { ...existing, ...rep };
-    if (!updated.empresaRepresentacaoId) {
-      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
-    }
+    const updated = { ...existing, ...rep, empresaRepresentacaoId: existing?.empresaRepresentacaoId || (systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId)) };
     setRepresentadas(representadas.map(r => r.id === rep.id ? updated : r));
     if (!isDemoMode) await saveRepresentada(updated);
   };
@@ -536,17 +500,14 @@ export default function App() {
 
   // Clientes
   const handleAddCliente = async (cli: Cliente) => {
-    const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
+    const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
     const withEmp = { ...cli, empresaRepresentacaoId: targetEmpId };
     setClientes([...clientes, withEmp]);
     if (!isDemoMode) await saveCliente(withEmp);
   };
   const handleEditCliente = async (cli: Cliente) => {
     const existing = clientes.find(c => c.id === cli.id);
-    const updated = { ...existing, ...cli };
-    if (!updated.empresaRepresentacaoId) {
-      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
-    }
+    const updated = { ...existing, ...cli, empresaRepresentacaoId: existing?.empresaRepresentacaoId || (systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId)) };
     setClientes(clientes.map(c => c.id === cli.id ? updated : c));
     if (!isDemoMode) await saveCliente(updated);
   };
@@ -557,19 +518,16 @@ export default function App() {
 
   // Pedidos
   const handleAddPedido = async (pedido: Pedido) => {
-    const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
-    const withEmp = { ...pedido, empresaRepresentacaoId: targetEmpId, createdByUserId: currentUser?.id };
+    const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
+    const withEmp = { ...pedido, empresaRepresentacaoId: targetEmpId, createdByUserId: auth.currentUser?.uid };
     setPedidos([withEmp, ...pedidos]);
     if (!isDemoMode) await savePedido(withEmp);
   };
   const handleEditPedido = async (pedido: Pedido) => {
     const existing = pedidos.find(p => p.id === pedido.id);
-    const updated = { ...existing, ...pedido };
-    if (!updated.empresaRepresentacaoId) {
-      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
-    }
+    const updated = { ...existing, ...pedido, empresaRepresentacaoId: existing?.empresaRepresentacaoId || (systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId)) };
     if (!updated.createdByUserId) {
-      updated.createdByUserId = currentUser?.id;
+      updated.createdByUserId = auth.currentUser?.uid;
     }
     setPedidos(pedidos.map(p => p.id === pedido.id ? updated : p));
     if (!isDemoMode) await savePedido(updated);
@@ -581,17 +539,14 @@ export default function App() {
 
   // Produtos
   const handleAddProduto = async (prod: Produto) => {
-    const targetEmpId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
+    const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
     const withEmp = { ...prod, empresaRepresentacaoId: targetEmpId };
     setProdutos([...produtos, withEmp]);
     if (!isDemoMode) await saveProduto(withEmp);
   };
   const handleEditProduto = async (prod: Produto) => {
     const existing = produtos.find(p => p.id === prod.id);
-    const updated = { ...existing, ...prod };
-    if (!updated.empresaRepresentacaoId) {
-      updated.empresaRepresentacaoId = activeEmpresaId === 'all' ? (empresas[0]?.id || '') : activeEmpresaId;
-    }
+    const updated = { ...existing, ...prod, empresaRepresentacaoId: existing?.empresaRepresentacaoId || (systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId)) };
     setProdutos(produtos.map(p => p.id === prod.id ? updated : p));
     if (!isDemoMode) await saveProduto(updated);
   };
@@ -602,7 +557,7 @@ export default function App() {
 
   // Empresas de Representação (Razões Sociais)
   const handleAddEmpresa = async (emp: EmpresaRepresentacao) => {
-    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
+    const isRaulUser = systemAdmin || isDemoMode;
     if (!isRaulUser) {
       alert('Apenas o administrador geral Raul possui permissão para cadastrar razões sociais.');
       return;
@@ -611,7 +566,7 @@ export default function App() {
     if (!isDemoMode) await saveEmpresa(emp);
   };
   const handleEditEmpresa = async (emp: EmpresaRepresentacao) => {
-    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
+    const isRaulUser = systemAdmin || isDemoMode;
     if (!isRaulUser) {
       alert('Apenas o administrador geral Raul possui permissão para editar razões sociais.');
       return;
@@ -620,7 +575,7 @@ export default function App() {
     if (!isDemoMode) await saveEmpresa(emp);
   };
   const handleDeleteEmpresa = async (id: string) => {
-    const isRaulUser = currentUser?.id === 'usr-raul' || currentUser?.nome?.toLowerCase() === 'raul' || currentUser?.email === 'raul' || currentUser?.email === 'rockstaraki2@gmail.com';
+    const isRaulUser = systemAdmin || isDemoMode;
     if (!isRaulUser) {
       alert('Apenas o administrador geral Raul possui permissão para remover razões sociais.');
       return;
@@ -661,83 +616,76 @@ export default function App() {
       alert('Modo demonstração: os dados são fictícios e não são sincronizados.');
       return;
     }
-    if (isSyncing) return;
+    if (isSyncing || !currentUser) return;
     setIsSyncing(true);
+    const scope: TenantScope = {
+      tenantId: systemAdmin ? activeEmpresaId : (currentUser.empresaRepresentacaoId || ''),
+      systemAdmin,
+    };
     try {
-      // 1. Force upload all local data to Firestore to make sure nothing is left out
-      const uploadPromises: Promise<any>[] = [];
-      
-      usuarios.forEach(usr => {
-        uploadPromises.push(saveUsuario(usr));
-      });
-      
-      representadas.forEach(rep => {
-        uploadPromises.push(saveRepresentada(rep));
-      });
-      
-      clientes.forEach(cli => {
-        uploadPromises.push(saveCliente(cli));
-      });
-      
-      produtos.forEach(prod => {
-        uploadPromises.push(saveProduto(prod));
-      });
-      
-      pedidos.forEach(ped => {
-        uploadPromises.push(savePedido(ped));
-      });
-      
-      empresas.forEach(emp => {
-        uploadPromises.push(saveEmpresa(emp));
-      });
-      
-      if (meta) {
-        uploadPromises.push(saveMeta(meta));
-      }
-      
-      await Promise.all(uploadPromises);
-      
-      // 2. Fetch the latest consolidated data from Firestore
-      const [
-        repData,
-        cliData,
-        pedData,
-        prodData,
-        empData,
-        usrData,
-        metaData
-      ] = await Promise.all([
-        getRepresentadas(),
-        getClientes(),
-        getPedidos(),
-        getProdutos(),
-        getEmpresas(),
-        getUsuarios(),
-        getMeta()
+      const [repData, cliData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
+        getUserPermissions(currentUser).verRepresentadas ? getRepresentadas(scope, true) : Promise.resolve([]),
+        getUserPermissions(currentUser).verClientes ? getClientes(scope, true) : Promise.resolve([]),
+        getPedidos(scope, currentUser, true),
+        getUserPermissions(currentUser).verProdutos ? getProdutos(scope, true) : Promise.resolve([]),
+        getEmpresas(scope, true),
+        getUsuarios(scope, currentUser, canManageUsers, true),
+        getUserPermissions(currentUser).verFinanceiro ? getMeta(scope, true) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
       ]);
-
-      if (repData.length > 0) setRepresentadas(repData);
-      if (cliData.length > 0) setClientes(cliData);
-      if (pedData.length > 0) setPedidos(pedData);
-      if (prodData.length > 0) setProdutos(prodData);
-      if (empData.length > 0) setEmpresas(empData);
-      if (usrData.length > 0) setUsuarios(usrData);
-      if (metaData) setMeta(metaData);
-
-      alert(`Sucesso!\nSincronização forçada realizada com sucesso!\n\nDados consolidados e enviados ao Firestore:\n- ${usuarios.length} Usuários\n- ${empresas.length} Razões Sociais\n- ${representadas.length} Representadas\n- ${clientes.length} Clientes\n- ${produtos.length} Produtos\n- ${pedidos.length} Pedidos de Venda\n\nTodos os registros estão sincronizados e salvos com segurança.`);
-    } catch (err: any) {
-      console.error('Erro ao sincronizar dados:', err);
-      const errMsg = err?.message || String(err);
-      if (errMsg.includes('permissions') || errMsg.includes('insufficient') || errMsg.includes('denied')) {
-        setHasPermissionError(true);
-        setShowRulesGuide(true);
-        alert(`Erro de permissão no Firestore. Por favor, verifique as regras de segurança.`);
-      } else {
-        alert(`Ocorreu um erro ao sincronizar dados com o servidor: ${errMsg}`);
-      }
+      setRepresentadas(repData);
+      setClientes(cliData);
+      setPedidos(pedData);
+      setProdutos(prodData);
+      setEmpresas(empData);
+      setUsuarios(usrData);
+      setMeta(metaData);
+      alert('Dados atualizados a partir do Firestore para a empresa autorizada.');
+    } catch (error: any) {
+      console.error('Falha ao atualizar dados:', error);
+      alert('Não foi possível atualizar os dados. Verifique a conexão e as permissões da conta.');
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleLogout = async () => {
+    if (isDemoMode) {
+      window.location.href = window.location.pathname;
+      return;
+    }
+    if (!navigator.onLine) {
+      setErrorMessage('Para sair com segurança, reconecte-se primeiro. Assim garantimos que alterações pendentes sejam sincronizadas e removemos a cópia offline deste aparelho.');
+      return;
+    }
+
+    let timeoutId: number | undefined;
+    try {
+      await Promise.race([
+        waitForOfflineWritesToSync(),
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => reject(new Error('A sincronização ainda está pendente.')), 10000);
+        }),
+      ]);
+    } catch (error: any) {
+      setErrorMessage(error?.message === 'A sincronização ainda está pendente.'
+        ? 'Ainda há alterações aguardando confirmação do servidor. Mantenha o sistema aberto e tente sair novamente quando a sincronização terminar.'
+        : 'Não foi possível confirmar a sincronização. Verifique a conexão antes de sair.');
+      return;
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+    }
+
+    try {
+      await clearOfflineFirestoreCache();
+    } catch {
+      alert('Não consegui apagar a cópia offline com segurança. Feche as outras abas do RepresentaPRO e tente sair novamente.');
+      window.location.reload();
+      return;
+    }
+
+    await signOut(auth);
+    Object.keys(localStorage).filter((key) => key.startsWith('rep_')).forEach((key) => localStorage.removeItem(key));
+    window.location.reload();
   };
 
   if (loading) {
@@ -756,15 +704,7 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <LoginScreen 
-        usuarios={usuarios}
-        empresas={empresas}
-        onLoginSuccess={(userId, empresaId) => {
-          setCurrentUserId(userId);
-          setActiveEmpresaId(empresaId);
-          setIsAuthenticated(true);
-        }}
-      />
+      <LoginScreen initialError={sessionError} />
     );
   }
 
@@ -773,6 +713,15 @@ export default function App() {
       {isDemoMode && (
         <div className="bg-amber-100 text-amber-900 border-b border-amber-200 text-[11px] font-extrabold text-center py-1.5 px-3 tracking-wide">
           MODO DEMONSTRAÇÃO • dados fictícios • nenhuma alteração é enviada ao banco real
+        </div>
+      )}
+      {!isDemoMode && (!isOnline || isUsingCachedData || hasPendingSync) && (
+        <div role="status" aria-live="polite" className={`px-4 py-2 text-center text-[11px] font-bold ${hasPendingSync ? 'bg-amber-100 text-amber-900' : 'bg-blue-50 text-blue-900'}`}>
+          {hasPendingSync
+            ? 'Alterações salvas neste aparelho e aguardando conexão para sincronizar.'
+            : !isOnline
+              ? 'Sem internet — exibindo os dados disponíveis da última sincronização neste aparelho.'
+              : 'Conexão instável — mostrando a cópia local enquanto o sistema tenta atualizar.'}
         </div>
       )}
       
@@ -945,9 +894,7 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => {
-                setIsAuthenticated(false);
-              }}
+              onClick={() => { void handleLogout(); }}
               className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-red-100/50"
               title="Sair do sistema"
             >
@@ -1168,7 +1115,7 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'financeiro' && currentUser?.role === 'Administrador' && (
+              {activeTab === 'financeiro' && (currentUser?.role === 'Administrador' || userPermissions.verFinanceiro) && (
                 <FinanceiroTab 
                   pedidos={filteredPedidos}
                   clientes={filteredClientes}
@@ -1193,7 +1140,7 @@ export default function App() {
                   onEditUsuario={handleEditUsuario}
                   onDeleteUsuario={handleDeleteUsuario}
                   onSelectEmpresa={handleSelectEmpresa}
-                  onSelectUsuario={handleSelectUsuario}
+                  isSystemAdmin={systemAdmin}
                 />
               )}
             </motion.div>
