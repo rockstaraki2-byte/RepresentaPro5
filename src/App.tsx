@@ -527,10 +527,20 @@ export default function App() {
       setErrorMessage('O lead precisa estar vinculado à empresa autorizada deste usuário.');
       return;
     }
-    const safeLead = { ...lead, empresaRepresentacaoId: tenantId };
+    const authenticatedUserId = auth.currentUser?.uid;
+    if (!isDemoMode && (!authenticatedUserId || !auth.currentUser?.emailVerified)) {
+      setErrorMessage('Sua sessão expirou. Entre novamente para cadastrar o lead.');
+      return;
+    }
+    const safeLead = {
+      ...lead,
+      responsavelUserId: authenticatedUserId || currentUser?.id || lead.responsavelUserId,
+      criadoPorUserId: authenticatedUserId || currentUser?.id || lead.criadoPorUserId,
+      empresaRepresentacaoId: tenantId,
+    };
     setLeads((current) => [safeLead, ...current]);
     if (!isDemoMode) {
-      void loadFirebaseServices().then((firebaseServices) => firebaseServices.saveLead(safeLead)).catch((error: any) => {
+      void loadFirebaseServices().then((firebaseServices) => firebaseServices.createLead(safeLead)).catch((error: any) => {
         setLeads((current) => current.filter((item) => item.id !== safeLead.id));
         console.error('Falha ao salvar lead:', error?.code || 'unknown');
         setErrorMessage('Não foi possível salvar o lead. Verifique a conexão e as permissões da conta.');

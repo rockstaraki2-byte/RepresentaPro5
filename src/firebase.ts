@@ -33,6 +33,7 @@ import type {
   Usuario,
   MetaVendas,
 } from './types';
+import { prepareLeadForCreate } from './leadFirestorePayload';
 import { app, auth, isSystemAdminAccount } from './firebase-app';
 
 export { app, auth, SYSTEM_ADMIN_EMAIL, isSystemAdminAccount } from './firebase-app';
@@ -154,9 +155,15 @@ function removeUndefinedFields(value: any): any {
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
   const message = error instanceof Error ? error.message : String(error);
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code || '')
+    : '';
   // Never include document contents, credentials, or email addresses in logs.
-  console.error('Firestore operation failed', { operationType, path, message });
-  throw new Error(message);
+  console.error('Firestore operation failed', { operationType, path, code: code || undefined, message });
+  if (error instanceof Error) throw error;
+  const wrappedError = new Error(message) as Error & { code?: string };
+  if (code) wrappedError.code = code;
+  throw wrappedError;
 }
 
 function requireTenant(scope: TenantScope): void {
@@ -337,6 +344,27 @@ export async function getLeads(scope: TenantScope, user?: Usuario, forceServer =
 export async function saveLead(lead: Lead): Promise<void> {
   try {
     await setDoc(doc(db, 'leads', lead.id), removeUndefinedFields(lead));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'leads');
+  }
+}
+
+/** Create ownership fields from the verified Firebase identity, never from UI-supplied IDs. */
+export async function createLead(lead: Lead): Promise<void> {
+  const user = auth.currentUser;
+  if (!user?.emailVerified) {
+    const error = new Error('É necessário autenticar novamente para cadastrar um lead.') as Error & { code: string };
+    error.code = 'unauthenticated';
+    throw error;
+  }
+
+  const authenticatedLead = prepareLeadForCreate({
+    ...lead,
+    responsavelUserId: user.uid,
+    criadoPorUserId: user.uid,
+  });
+  try {
+    await setDoc(doc(db, 'leads', authenticatedLead.id), removeUndefinedFields(authenticatedLead));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'leads');
   }
