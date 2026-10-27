@@ -14,6 +14,9 @@ export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
       verLeads: true,
       editarLeads: true,
       verTodosLeads: true,
+      verAgenda: true,
+      editarAgenda: true,
+      verTodaAgenda: true,
       verProdutos: true,
       editarProdutos: true,
       verRepresentadas: true,
@@ -36,6 +39,9 @@ export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
     verLeads: p.verLeads !== undefined ? p.verLeads : true,
     editarLeads: p.editarLeads !== undefined ? p.editarLeads : true,
     verTodosLeads: p.verTodosLeads !== undefined ? p.verTodosLeads : isRep,
+    verAgenda: p.verAgenda !== undefined ? p.verAgenda : true,
+    editarAgenda: p.editarAgenda !== undefined ? p.editarAgenda : true,
+    verTodaAgenda: p.verTodaAgenda !== undefined ? p.verTodaAgenda : false,
     verProdutos: p.verProdutos !== undefined ? p.verProdutos : true,
     editarProdutos: p.editarProdutos !== undefined ? p.editarProdutos : (isRep ? true : false),
     verRepresentadas: p.verRepresentadas !== undefined ? p.verRepresentadas : true,
@@ -64,6 +70,38 @@ export function getLocalIsoCalendarDate(date: Date = new Date()): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+export function isValidLocalDateTime(value: string): boolean {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match || !isValidIsoCalendarDate(match[1])) return false;
+
+  const hour = Number(match[2]);
+  const minute = Number(match[3]);
+  if (hour > 23 || minute > 59) return false;
+
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime())
+    && parsed.getFullYear() === Number(match[1].slice(0, 4))
+    && parsed.getMonth() + 1 === Number(match[1].slice(5, 7))
+    && parsed.getDate() === Number(match[1].slice(8, 10))
+    && parsed.getHours() === hour
+    && parsed.getMinutes() === minute;
+}
+
+export function localDateTimeToIso(value: string): string {
+  if (!isValidLocalDateTime(value)) throw new Error('Informe uma data e hora válidas.');
+  return new Date(value).toISOString();
+}
+
+export function isoDateTimeToLocalInput(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+export function getLocalDateTimeInputValue(date: Date = new Date()): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
 export const formatarMoeda = (valor: number): string => {

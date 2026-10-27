@@ -253,6 +253,7 @@ export default function AdminTab({
       perms = {
         verDashboard: true, verTodasVendas: true, verComissoes: true,
         verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: true,
+        verAgenda: true, editarAgenda: true, verTodaAgenda: true,
         verProdutos: true, editarProdutos: true,
         verRepresentadas: true, verFinanceiro: true, criarPedidos: true, editarPedidos: true,
         excluirPedidos: true, gerenciarUsuarios: true
@@ -261,6 +262,7 @@ export default function AdminTab({
       perms = {
         verDashboard: true, verTodasVendas: false, verComissoes: false,
         verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: false,
+        verAgenda: true, editarAgenda: true, verTodaAgenda: false,
         verProdutos: true, editarProdutos: false,
         verRepresentadas: true, verFinanceiro: false, criarPedidos: true, editarPedidos: true,
         excluirPedidos: false, gerenciarUsuarios: false
@@ -269,6 +271,7 @@ export default function AdminTab({
       perms = {
         verDashboard: true, verTodasVendas: true, verComissoes: true,
         verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: true,
+        verAgenda: true, editarAgenda: true, verTodaAgenda: true,
         verProdutos: true, editarProdutos: true,
         verRepresentadas: true, verFinanceiro: false, criarPedidos: true, editarPedidos: true,
         excluirPedidos: false, gerenciarUsuarios: false
@@ -277,6 +280,7 @@ export default function AdminTab({
       perms = {
         verDashboard: true, verTodasVendas: true, verComissoes: true,
         verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: true,
+        verAgenda: true, editarAgenda: true, verTodaAgenda: true,
         verProdutos: true, editarProdutos: true,
         verRepresentadas: true, verFinanceiro: true, criarPedidos: true, editarPedidos: true,
         excluirPedidos: true, gerenciarUsuarios: false
@@ -285,6 +289,7 @@ export default function AdminTab({
       perms = {
         verDashboard: false, verTodasVendas: false, verComissoes: false,
         verClientes: false, editarClientes: false, verLeads: false, editarLeads: false, verTodosLeads: false,
+        verAgenda: false, editarAgenda: false, verTodaAgenda: false,
         verProdutos: false, editarProdutos: false,
         verRepresentadas: false, verFinanceiro: false, criarPedidos: false, editarPedidos: false,
         excluirPedidos: false, gerenciarUsuarios: false
@@ -1016,6 +1021,9 @@ export default function AdminTab({
                       { key: 'verLeads', label: '🎯 CRM / Prospecção', desc: 'Acessar oportunidades comerciais' },
                       { key: 'editarLeads', label: '➕ Cadastrar / Editar Leads', desc: 'Criar e atualizar oportunidades' },
                       { key: 'verTodosLeads', label: '🌐 Ver Leads da Empresa', desc: 'Se desativado, o usuário enxerga apenas os leads sob sua responsabilidade' },
+                      { key: 'verAgenda', label: '🗓️ Agenda de Visitas e Tarefas', desc: 'Acessar compromissos comerciais' },
+                      { key: 'editarAgenda', label: '➕ Criar / Editar Agenda', desc: 'Criar, concluir e alterar seus compromissos' },
+                      { key: 'verTodaAgenda', label: '🌐 Ver Agenda da Empresa', desc: 'Consultar compromissos de outros usuários do tenant' },
                       { key: 'verProdutos', label: '📦 Catálogo de Produtos', desc: 'Acessar a lista e preços dos produtos' },
                       { key: 'editarProdutos', label: '✏️ Cadastrar / Editar Produtos', desc: 'Permissão para alterar catálogo de produtos' },
                       { key: 'verRepresentadas', label: '🏭 Representadas / Fábricas', desc: 'Visualizar fornecedores e indústrias' },

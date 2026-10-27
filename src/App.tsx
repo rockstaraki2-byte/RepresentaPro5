@@ -1,8 +1,12 @@
+Warning: truncated output (original token count: 21122)
+Total output lines: 1688
+
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   LayoutDashboard,
   Briefcase,
+  CalendarDays,
   Users,
   ShoppingCart,
   Landmark,
@@ -19,7 +23,7 @@ import {
 } from 'lucide-react';
 import { formatarMoeda, getUserPermissions } from './utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Representada, Cliente, Lead, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao } from './types';
+import { Representada, Cliente, Lead, AgendaItem, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao } from './types';
 import { auth, isSystemAdminAccount } from './firebase-app';
 import type { TenantScope } from './firebase';
 import {
@@ -37,6 +41,7 @@ const DashboardTab = lazy(() => import('./components/DashboardTab'));
 const RepresentadasTab = lazy(() => import('./components/RepresentadasTab'));
 const ClientesTab = lazy(() => import('./components/ClientesTab'));
 const LeadsTab = lazy(() => import('./components/LeadsTab'));
+const AgendaTab = lazy(() => import('./components/AgendaTab'));
 const PedidosTab = lazy(() => import('./components/PedidosTab'));
 const ProdutosTab = lazy(() => import('./components/ProdutosTab'));
 const FinanceiroTab = lazy(() => import('./components/FinanceiroTab'));
@@ -72,6 +77,7 @@ export default function App() {
   const [representadas, setRepresentadas] = useState<Representada[]>(() => isDemoMode ? DEMO_REPRESENTADAS : []);
   const [clientes, setClientes] = useState<Cliente[]>(() => isDemoMode ? DEMO_CLIENTES : []);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>(() => isDemoMode ? DEMO_PEDIDOS : []);
   const [meta, setMeta] = useState<MetaVendas>(() => isDemoMode ? DEMO_METAS : { metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7) });
   const [produtos, setProdutos] = useState<Produto[]>(() => isDemoMode ? DEMO_PRODUTOS : []);
@@ -125,7 +131,7 @@ export default function App() {
   }, [isDemoMode]);
 
   // --- UI Navigation & Active States ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'representadas' | 'clientes' | 'leads' | 'pedidos' | 'produtos' | 'financeiro' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'representadas' | 'clientes' | 'leads' | 'agenda' | 'pedidos' | 'produtos' | 'financeiro' | 'admin'>('dashboard');
   const [activePedidoToEdit, setActivePedidoToEdit] = useState<Pedido | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(!isDemoMode);
@@ -284,6 +290,7 @@ export default function App() {
       setRepresentadas([]);
       setClientes([]);
       setLeads([]);
+      setAgendaItems([]);
       setPedidos([]);
       setProdutos([]);
       setEmpresas([]);
@@ -307,6 +314,7 @@ export default function App() {
     setRepresentadas([]);
     setClientes([]);
     setLeads([]);
+    setAgendaItems([]);
     setPedidos([]);
     setProdutos([]);
     setEmpresas([]);
@@ -316,16 +324,18 @@ export default function App() {
       dataPermissions.verRepresentadas ? firebaseServices.getRepresentadas(scope) : Promise.resolve([]),
       dataPermissions.verClientes ? firebaseServices.getClientes(scope) : Promise.resolve([]),
       dataPermissions.verLeads ? firebaseServices.getLeads(scope, currentUser) : Promise.resolve([]),
+      dataPermissions.verAgenda ? firebaseServices.getAgendaItems(scope, currentUser) : Promise.resolve([]),
       firebaseServices.getPedidos(scope, currentUser),
       dataPermissions.verProdutos ? firebaseServices.getProdutos(scope) : Promise.resolve([]),
       firebaseServices.getEmpresas(scope),
       firebaseServices.getUsuarios(scope, currentUser, canManageUsers),
       dataPermissions.verFinanceiro ? firebaseServices.getMeta(scope) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
-    ])).then(([repData, cliData, leadData, pedData, prodData, empData, usrData, metaData]) => {
+    ])).then(([repData, cliData, leadData, agendaData, pedData, prodData, empData, usrData, metaData]) => {
       if (cancelled) return;
       setRepresentadas(repData);
       setClientes(cliData);
       setLeads(leadData);
+      setAgendaItems(agendaData);
       setPedidos(pedData);
       setProdutos(prodData);
       setEmpresas(empData);
@@ -419,6 +429,7 @@ export default function App() {
       }, currentUser);
       if (dataPermissions.verClientes) subscribe('clientes', (snapshot) => setClientes(snapshot.docs.map((item: any) => item.data() as Cliente)));
       if (dataPermissions.verLeads) subscribe('leads', (snapshot) => setLeads(snapshot.docs.map((item: any) => item.data() as Lead)), currentUser);
+      if (dataPermissions.verAgenda) subscribe('agenda', (snapshot) => setAgendaItems(snapshot.docs.map((item: any) => item.data() as AgendaItem)), currentUser);
       if (dataPermissions.verRepresentadas) subscribe('representadas', (snapshot) => setRepresentadas(snapshot.docs.map((item: any) => item.data() as Representada)));
       if (dataPermissions.verProdutos) subscribe('produtos', (snapshot) => setProdutos(snapshot.docs.map((item: any) => item.data() as Produto)));
       subscribe('empresas', (snapshot) => setEmpresas(snapshot.docs.map((item: any) => item.data() as EmpresaRepresentacao)));
@@ -452,6 +463,7 @@ export default function App() {
   const filteredRepresentadas = showAllData ? representadas : representadas.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
   const filteredClientes = showAllData ? clientes : clientes.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
   const filteredLeads = showAllData ? leads : leads.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
+  const filteredAgendaItems = showAllData ? agendaItems : agendaItems.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
   let baseFilteredPedidos = showAllData ? pedidos : pedidos.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
   if (!userPermissions.verTodasVendas && !showAllData && currentUser) {
     baseFilteredPedidos = baseFilteredPedidos.filter((item) => item.createdByUserId === currentUser.id || item.createdByUserId === currentUser.legacyId);
@@ -464,6 +476,7 @@ export default function App() {
       : activeTab === 'representadas' ? userPermissions.verRepresentadas
         : activeTab === 'clientes' ? userPermissions.verClientes
         : activeTab === 'leads' ? userPermissions.verLeads
+          : activeTab === 'agenda' ? userPermissions.verAgenda
           : activeTab === 'produtos' ? userPermissions.verProdutos
             : activeTab === 'financeiro' ? currentUser?.role === 'Administrador' || userPermissions.verFinanceiro
               : activeTab === 'admin' ? currentUser?.role === 'Administrador'
@@ -473,11 +486,12 @@ export default function App() {
         : userPermissions.verRepresentadas ? 'representadas'
           : userPermissions.verClientes ? 'clientes'
           : userPermissions.verLeads ? 'leads'
-            : userPermissions.verProdutos ? 'produtos'
-              : 'pedidos';
+            : userPermissions.verAgenda ? 'agenda'
+              : userPermissions.verProdutos ? 'produtos'
+                : 'pedidos';
       setActiveTab(nextTab);
     }
-  }, [activeTab, currentUser?.role, userPermissions.verDashboard, userPermissions.verRepresentadas, userPermissions.verClientes, userPermissions.verLeads, userPermissions.verProdutos, userPermissions.verFinanceiro]);
+  }, [activeTab, currentUser?.role, userPermissions.verDashboard, userPermissions.verRepresentadas, userPermissions.verClientes, userPermissions.verLeads, userPermissions.verAgenda, userPermissions.verProdutos, userPermissions.verFinanceiro]);
 
   const handleSelectEmpresa = (id: string) => {
     if (systemAdmin || isDemoMode) setActiveEmpresaId(id);
@@ -624,6 +638,66 @@ export default function App() {
     }
   };
 
+  const handleSaveAgendaItem = (item: AgendaItem) => {
+    const existing = agendaItems.find((candidate) => candidate.id === item.id);
+    const isTenantAdmin = Boolean(systemAdmin || currentUser?.role === 'Administrador');
+    const ownsExisting = Boolean(existing && currentUser
+      && (existing.responsavelUserId === currentUser.id || existing.responsavelUserId === currentUser.legacyId));
+    if (!currentUser || !userPermissions.verAgenda || !userPermissions.editarAgenda
+      || (existing && !isTenantAdmin && !ownsExisting)) {
+      setErrorMessage('Seu usuário não tem permissão para salvar este compromisso.');
+      return;
+    }
+
+    const tenantId = existing?.empresaRepresentacaoId || item.empresaRepresentacaoId;
+    if (!tenantId || tenantId === 'all' || (!systemAdmin && tenantId !== currentUser.empresaRepresentacaoId)) {
+      setErrorMessage('O compromisso precisa permanecer vinculado à empresa autorizada deste usuário.');
+      return;
+    }
+
+    const safeItem: AgendaItem = {
+      ...item,
+      id: existing?.id || item.id,
+      empresaRepresentacaoId: tenantId,
+      responsavelUserId: existing?.responsavelUserId || currentUser.id,
+      criadoPorUserId: existing?.criadoPorUserId || currentUser.id,
+      criadoEm: existing?.criadoEm || item.criadoEm,
+    };
+    setAgendaItems((current) => existing
+      ? current.map((candidate) => candidate.id === safeItem.id ? safeItem : candidate)
+      : [safeItem, ...current]);
+
+    if (!isDemoMode) {
+      void loadFirebaseServices().then((firebaseServices) => firebaseServices.saveAgendaItem(safeItem)).catch((error: any) => {
+        setAgendaItems((current) => existing
+          ? current.map((candidate) => candidate.id === safeItem.id && candidate.atualizadoEm === safeItem.atualizadoEm ? existing : candidate)
+          : current.filter((candidate) => candidate.id !== safeItem.id));
+        console.error('Falha ao salvar compromisso:', error?.code || 'unknown');
+        setErrorMessage('Não foi possível salvar o compromisso. Verifique a conexão e as permissões da conta.');
+      });
+    }
+  };
+
+  const handleDeleteAgendaItem = (id: string) => {
+    const existing = agendaItems.find((candidate) => candidate.id === id);
+    const isTenantAdmin = Boolean(systemAdmin || currentUser?.role === 'Administrador');
+    const ownsExisting = Boolean(existing && currentUser
+      && (existing.responsavelUserId === currentUser.id || existing.responsavelUserId === currentUser.legacyId));
+    if (!existing || !userPermissions.editarAgenda || (!isTenantAdmin && !ownsExisting)) {
+      setErrorMessage('Seu usuário não tem permissão para excluir este compromisso.');
+      return;
+    }
+
+    setAgendaItems((current) => current.filter((candidate) => candidate.id !== id));
+    if (!isDemoMode) {
+      void loadFirebaseServices().then((firebaseServices) => firebaseServices.deleteAgendaItem(id)).catch((error: any) => {
+        setAgendaItems((current) => current.some((candidate) => candidate.id === id) ? current : [existing, ...current]);
+        console.error('Falha ao excluir compromisso:', error?.code || 'unknown');
+        setErrorMessage('Não foi possível excluir o compromisso. Verifique a conexão e as permissões da conta.');
+      });
+    }
+  };
+
   // Pedidos
   const handleAddPedido = async (pedido: Pedido) => {
     const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
@@ -732,105 +806,9 @@ export default function App() {
     };
     try {
       const firebaseServices = await loadFirebaseServices();
-      const [repData, cliData, leadData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
+      const [repData, cliData, leadData, agendaData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
         getUserPermissions(currentUser).verRepresentadas ? firebaseServices.getRepresentadas(scope, true) : Promise.resolve([]),
-        getUserPermissions(currentUser).verClientes ? firebaseServices.getClientes(scope, true) : Promise.resolve([]),
-        getUserPermissions(currentUser).verLeads ? firebaseServices.getLeads(scope, currentUser, true) : Promise.resolve([]),
-        firebaseServices.getPedidos(scope, currentUser, true),
-        getUserPermissions(currentUser).verProdutos ? firebaseServices.getProdutos(scope, true) : Promise.resolve([]),
-        firebaseServices.getEmpresas(scope, true),
-        firebaseServices.getUsuarios(scope, currentUser, canManageUsers, true),
-        getUserPermissions(currentUser).verFinanceiro ? firebaseServices.getMeta(scope, true) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
-      ]);
-      setRepresentadas(repData);
-      setClientes(cliData);
-      setLeads(leadData);
-      setPedidos(pedData);
-      setProdutos(prodData);
-      setEmpresas(empData);
-      setUsuarios(usrData);
-      setMeta(metaData);
-      alert('Dados atualizados a partir do Firestore para a empresa autorizada.');
-    } catch (error: any) {
-      console.error('Falha ao atualizar dados:', error);
-      alert('Não foi possível atualizar os dados. Verifique a conexão e as permissões da conta.');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    if (isDemoMode) {
-      window.location.href = window.location.pathname;
-      return;
-    }
-    if (!navigator.onLine) {
-      setErrorMessage('Para sair com segurança, reconecte-se primeiro. Assim garantimos que alterações pendentes sejam sincronizadas e removemos a cópia offline deste aparelho.');
-      return;
-    }
-
-    let timeoutId: number | undefined;
-    try {
-      const firebaseServices = await loadFirebaseServices();
-      await Promise.race([
-        firebaseServices.waitForOfflineWritesToSync(),
-        new Promise<never>((_, reject) => {
-          timeoutId = window.setTimeout(() => reject(new Error('A sincronização ainda está pendente.')), 10000);
-        }),
-      ]);
-    } catch (error: any) {
-      setErrorMessage(error?.message === 'A sincronização ainda está pendente.'
-        ? 'Ainda há alterações aguardando confirmação do servidor. Mantenha o sistema aberto e tente sair novamente quando a sincronização terminar.'
-        : 'Não foi possível confirmar a sincronização. Verifique a conexão antes de sair.');
-      return;
-    } finally {
-      if (timeoutId) window.clearTimeout(timeoutId);
-    }
-
-    try {
-      const firebaseServices = await loadFirebaseServices();
-      await firebaseServices.clearOfflineFirestoreCache();
-    } catch {
-      alert('Não consegui apagar a cópia offline com segurança. Feche as outras abas do RepresentaPRO e tente sair novamente.');
-      window.location.reload();
-      return;
-    }
-
-    await signOut(auth);
-    Object.keys(localStorage).filter((key) => key.startsWith('rep_')).forEach((key) => localStorage.removeItem(key));
-    window.location.reload();
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#071F38] flex flex-col items-center justify-center p-6 text-white font-sans">
-        <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-          <div>
-            <h3 className="font-serif font-extrabold text-lg text-white">RepresentaPRO</h3>
-            <p className="text-xs text-slate-400 mt-1">Sincronizando portal com o Firestore...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <Suspense fallback={<div className="min-h-screen bg-[#071F38] flex items-center justify-center text-sm text-slate-300">Carregando...</div>}>
-        <LoginScreen initialError={sessionError} />
-      </Suspense>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#F6F8FB] text-slate-800 flex flex-col font-sans">
-      {isDemoMode && (
-        <div className="bg-amber-100 text-amber-900 border-b border-amber-200 text-[11px] font-extrabold text-center py-1.5 px-3 tracking-wide">
-          MODO DEMONSTRAÇÃO • dados fictícios • nenhuma alteração é enviada ao banco real
-        </div>
-      )}
-      {!isDemoMode && (!isOnline || isUsingCachedData || hasPendingSync) && (
+        getUserPermissions(currentUser).verCliente…1122 tokens truncated…dingSync) && (
         <div role="status" aria-live="polite" className={`px-4 py-2 text-center text-[11px] font-bold ${hasPendingSync ? 'bg-amber-100 text-amber-900' : 'bg-blue-50 text-blue-900'}`}>
           {hasPendingSync
             ? 'Alterações salvas neste aparelho e aguardando conexão para sincronizar.'
@@ -1107,6 +1085,21 @@ export default function App() {
             </button>
           )}
 
+          {userPermissions.verAgenda && (
+            <button
+              id="tab-agenda"
+              onClick={() => { setActiveTab('agenda'); setActivePedidoToEdit(null); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'agenda'
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <CalendarDays className="w-4 h-4" />
+              <span>Agenda</span>
+            </button>
+          )}
+
           {/* Tab: Produtos */}
           {userPermissions.verProdutos && (
             <button 
@@ -1226,6 +1219,7 @@ export default function App() {
                     representadas={filteredRepresentadas}
                     empresas={empresas}
                     currentUser={currentUser}
+                    usuarios={usuarios}
                     activeEmpresaId={activeEmpresaId}
                     isSystemAdmin={systemAdmin}
                     canEdit={userPermissions.editarLeads}
@@ -1233,6 +1227,21 @@ export default function App() {
                     onAdd={handleAddLead}
                     onEdit={handleEditLead}
                     onConvert={handleConvertLead}
+                  />
+                )}
+
+                {activeTab === 'agenda' && userPermissions.verAgenda && (
+                  <AgendaTab
+                    items={filteredAgendaItems}
+                    clientes={filteredClientes}
+                    leads={filteredLeads}
+                    empresas={empresas}
+                    currentUser={currentUser}
+                    activeEmpresaId={activeEmpresaId}
+                    isSystemAdmin={systemAdmin}
+                    canEdit={userPermissions.editarAgenda}
+                    onSave={handleSaveAgendaItem}
+                    onDelete={handleDeleteAgendaItem}
                   />
                 )}
 
@@ -1363,6 +1372,19 @@ export default function App() {
           >
             <Briefcase className="w-4 h-4" />
             <span className="text-[8px] font-bold mt-0.5">Leads</span>
+          </button>
+        )}
+
+        {userPermissions.verAgenda && (
+          <button
+            onClick={() => { setActiveTab('agenda'); setActivePedidoToEdit(null); }}
+            aria-label="Abrir agenda de visitas e tarefas"
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+              activeTab === 'agenda' ? 'text-emerald-600 scale-105' : 'text-slate-500'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+            <span className="text-[8px] font-bold mt-0.5">Agenda</span>
           </button>
         )}
 

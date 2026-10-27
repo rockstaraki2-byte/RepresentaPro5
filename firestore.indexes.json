@@ -23,6 +23,14 @@
         { "fieldPath": "empresaRepresentacaoId", "order": "ASCENDING" },
         { "fieldPath": "responsavelUserId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "agenda",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "empresaRepresentacaoId", "order": "ASCENDING" },
+        { "fieldPath": "responsavelUserId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
