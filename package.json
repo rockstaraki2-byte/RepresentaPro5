@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "test:offline-shell": "node tests/offline-shell.test.mjs",
+    "test:agenda-date": "node --import tsx tests/agenda-date.test.ts",
     "lint": "tsc --noEmit",
     "test:lead-date": "tsx tests/lead-date.test.ts",
     "test:firestore-rules": "npx --yes firebase-tools@14.27.0 emulators:exec --project demo-representapro-security --only firestore \"node tests/firestore.rules.test.mjs\"",

@@ -26,6 +26,7 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import type {
   Representada,
   Cliente,
+  AgendaItem,
   Lead,
   Pedido,
   Produto,
@@ -173,6 +174,10 @@ function canSeeAllLeads(user?: Usuario): boolean {
   return Boolean(user && (user.role === 'Administrador' || (user.permissoes?.verTodosLeads ?? user.role === 'Representante')));
 }
 
+function canSeeAllAgenda(user?: Usuario): boolean {
+  return Boolean(user && (user.role === 'Administrador' || user.permissoes?.verTodaAgenda === true));
+}
+
 export function scopedCollection(name: string, scope: TenantScope, owner?: Usuario): Query {
   requireTenant(scope);
   const base = collection(db, name);
@@ -185,6 +190,10 @@ export function scopedCollection(name: string, scope: TenantScope, owner?: Usuar
     return query(scoped, where('createdByUserId', 'in', userIds));
   }
   if (name === 'leads' && !scope.systemAdmin && owner?.id && !canSeeAllLeads(owner)) {
+    const userIds = Array.from(new Set([owner.id, owner.legacyId].filter((id): id is string => Boolean(id))));
+    return query(scoped, where('responsavelUserId', 'in', userIds));
+  }
+  if (name === 'agenda' && !scope.systemAdmin && owner?.id && !canSeeAllAgenda(owner)) {
     const userIds = Array.from(new Set([owner.id, owner.legacyId].filter((id): id is string => Boolean(id))));
     return query(scoped, where('responsavelUserId', 'in', userIds));
   }
@@ -339,6 +348,32 @@ export async function saveLead(lead: Lead): Promise<void> {
     await setDoc(doc(db, 'leads', lead.id), removeUndefinedFields(lead));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'leads');
+  }
+}
+
+export async function getAgendaItems(scope: TenantScope, user?: Usuario, forceServer = false): Promise<AgendaItem[]> {
+  const scoped = scopedCollection('agenda', scope, user);
+  try {
+    const snapshot = await readQuery(scoped, forceServer);
+    return snapshot.docs.map((item) => item.data() as AgendaItem);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'agenda');
+  }
+}
+
+export async function saveAgendaItem(item: AgendaItem): Promise<void> {
+  try {
+    await setDoc(doc(db, 'agenda', item.id), removeUndefinedFields(item));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'agenda');
+  }
+}
+
+export async function deleteAgendaItem(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'agenda', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'agenda');
   }
 }
 

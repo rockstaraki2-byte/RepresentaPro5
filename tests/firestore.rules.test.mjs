@@ -67,6 +67,20 @@ const lead = (id, company, owner) => ({
   atualizadoEm: '2026-10-26T10:00:00.000Z',
 });
 
+const agendaItem = (id, company, owner, overrides = {}) => ({
+  id,
+  empresaRepresentacaoId: company,
+  tipo: 'Visita',
+  titulo: `Visita ${id}`,
+  dataHora: '2026-11-01T10:00:00.000Z',
+  status: 'Pendente',
+  responsavelUserId: owner,
+  criadoPorUserId: owner,
+  criadoEm: '2026-10-27T10:00:00.000Z',
+  atualizadoEm: '2026-10-27T10:00:00.000Z',
+  ...overrides,
+});
+
 before(async () => {
   const rules = await readFile(new URL('../firestore.rules', import.meta.url), 'utf8');
   environment = await initializeTestEnvironment({
@@ -85,6 +99,7 @@ beforeEach(async () => {
     await setDoc(doc(db, 'usuarios', 'admin-b'), profile('admin-b', 'admin-b@example.com', 'tenant-b', 'Administrador'));
     await setDoc(doc(db, 'usuarios', 'rep-a-uid'), profile('rep-a-uid', 'rep-a@example.com', 'tenant-a', 'Representante'));
     await setDoc(doc(db, 'usuarios', 'no-leads-uid'), profile('no-leads-uid', 'no-leads@example.com', 'tenant-a', 'Vendedor', { verLeads: false, editarLeads: false }));
+    await setDoc(doc(db, 'usuarios', 'no-clients-uid'), profile('no-clients-uid', 'no-clients@example.com', 'tenant-a', 'Vendedor', { verClientes: false }));
     await setDoc(doc(db, 'clientes', 'client-a'), client('client-a', 'tenant-a'));
     await setDoc(doc(db, 'clientes', 'client-b'), client('client-b', 'tenant-b'));
     await setDoc(doc(db, 'pedidos', 'order-seller-a'), order('order-seller-a', 'tenant-a', 'seller-a-uid'));
@@ -93,6 +108,9 @@ beforeEach(async () => {
     await setDoc(doc(db, 'leads', 'lead-seller-a'), lead('lead-seller-a', 'tenant-a', 'seller-a-uid'));
     await setDoc(doc(db, 'leads', 'lead-seller-b'), lead('lead-seller-b', 'tenant-a', 'someone-else'));
     await setDoc(doc(db, 'leads', 'lead-tenant-b'), lead('lead-tenant-b', 'tenant-b', 'other-uid'));
+    await setDoc(doc(db, 'agenda', 'agenda-seller-a'), agendaItem('agenda-seller-a', 'tenant-a', 'seller-a-uid', { clienteId: 'client-a' }));
+    await setDoc(doc(db, 'agenda', 'agenda-seller-b'), agendaItem('agenda-seller-b', 'tenant-a', 'someone-else'));
+    await setDoc(doc(db, 'agenda', 'agenda-tenant-b'), agendaItem('agenda-tenant-b', 'tenant-b', 'other-uid'));
   });
 });
 
@@ -322,6 +340,95 @@ test('converts a lead through one linked client and rejects cross-tenant links',
     convertidoEm: '2026-10-26T11:10:00.000Z',
     atualizadoEm: '2026-10-26T11:10:00.000Z',
   }));
+});
+
+test('scopes agenda reads to the tenant and responsible user', async () => {
+  const sellerDb = environment.authenticatedContext('seller-a-uid', {
+    email: 'seller-a@example.com',
+    email_verified: true,
+  }).firestore();
+  const ownAgenda = query(
+    collection(sellerDb, 'agenda'),
+    where('empresaRepresentacaoId', '==', 'tenant-a'),
+    where('responsavelUserId', 'in', ['seller-a-uid']),
+  );
+  const ownResults = await assertSucceeds(getDocs(ownAgenda));
+  assert.deepEqual(ownResults.docs.map((item) => item.id), ['agenda-seller-a']);
+  await assertFails(getDocsFromServer(query(collection(sellerDb, 'agenda'), where('empresaRepresentacaoId', '==', 'tenant-a'))));
+  await assertFails(getDoc(doc(sellerDb, 'agenda', 'agenda-seller-b')));
+  await assertFails(getDoc(doc(sellerDb, 'agenda', 'agenda-tenant-b')));
+
+  const adminDb = environment.authenticatedContext('admin-a', {
+    email: 'admin-a@example.com',
+    email_verified: true,
+  }).firestore();
+  const tenantAgenda = await assertSucceeds(getDocs(query(
+    collection(adminDb, 'agenda'),
+    where('empresaRepresentacaoId', '==', 'tenant-a'),
+  )));
+  assert.equal(tenantAgenda.size, 2);
+});
+
+test('validates agenda writes, links, permissions, and immutable ownership', async () => {
+  const sellerDb = environment.authenticatedContext('seller-a-uid', {
+    email: 'seller-a@example.com',
+    email_verified: true,
+  }).firestore();
+
+  await assertSucceeds(setDoc(doc(sellerDb, 'agenda', 'new-agenda-a'), agendaItem('new-agenda-a', 'tenant-a', 'seller-a-uid')));
+  await assertSucceeds(setDoc(doc(sellerDb, 'agenda', 'linked-lead'), agendaItem('linked-lead', 'tenant-a', 'seller-a-uid', { leadId: 'lead-seller-a' })));
+  await assertSucceeds(setDoc(doc(sellerDb, 'agenda', 'linked-client'), agendaItem('linked-client', 'tenant-a', 'seller-a-uid', { clienteId: 'client-a' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'cross-tenant'), agendaItem('cross-tenant', 'tenant-b', 'seller-a-uid')));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'wrong-owner'), agendaItem('wrong-owner', 'tenant-a', 'someone-else')));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'missing-title'), agendaItem('missing-title', 'tenant-a', 'seller-a-uid', { titulo: '' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'bad-date'), agendaItem('bad-date', 'tenant-a', 'seller-a-uid', { dataHora: '27/10/2026 10:00' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'bad-type'), agendaItem('bad-type', 'tenant-a', 'seller-a-uid', { tipo: 'Ligação' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'extra-field'), agendaItem('extra-field', 'tenant-a', 'seller-a-uid', { secret: 'unexpected' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'bad-link'), agendaItem('bad-link', 'tenant-a', 'seller-a-uid', { leadId: 'lead-seller-b' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'bad-client-link'), agendaItem('bad-client-link', 'tenant-a', 'seller-a-uid', { clienteId: 'client-b' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'two-links'), agendaItem('two-links', 'tenant-a', 'seller-a-uid', { leadId: 'lead-seller-a', clienteId: 'client-a' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'long-description'), agendaItem('long-description', 'tenant-a', 'seller-a-uid', { descricao: 'x'.repeat(1501) })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'missing-completion-date'), agendaItem('missing-completion-date', 'tenant-a', 'seller-a-uid', { status: 'Concluída' })));
+  await assertFails(setDoc(doc(sellerDb, 'agenda', 'pending-with-completion-date'), agendaItem('pending-with-completion-date', 'tenant-a', 'seller-a-uid', { concluidoEm: '2026-10-27T10:00:00.000Z' })));
+
+  await assertFails(updateDoc(doc(sellerDb, 'agenda', 'agenda-seller-a'), { empresaRepresentacaoId: 'tenant-b' }));
+  await assertFails(updateDoc(doc(sellerDb, 'agenda', 'agenda-seller-a'), { responsavelUserId: 'someone-else' }));
+  await assertFails(updateDoc(doc(sellerDb, 'agenda', 'agenda-seller-a'), { criadoPorUserId: 'someone-else' }));
+  await assertFails(updateDoc(doc(sellerDb, 'agenda', 'agenda-seller-a'), { criadoEm: '2099-01-01T00:00:00.000Z' }));
+  await assertFails(updateDoc(doc(sellerDb, 'agenda', 'agenda-seller-b'), { titulo: 'Alteração de compromisso alheio' }));
+  await assertSucceeds(updateDoc(doc(sellerDb, 'agenda', 'agenda-seller-a'), {
+    status: 'Concluída',
+    concluidoEm: '2026-10-27T11:00:00.000Z',
+    atualizadoEm: '2026-10-27T11:00:00.000Z',
+  }));
+  await assertSucceeds(deleteDoc(doc(sellerDb, 'agenda', 'agenda-seller-a')));
+  await assertFails(deleteDoc(doc(sellerDb, 'agenda', 'agenda-seller-b')));
+
+  const noAgendaDb = environment.authenticatedContext('no-agenda-uid', {
+    email: 'no-agenda@example.com',
+    email_verified: true,
+  }).firestore();
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'usuarios', 'no-agenda-uid'), profile('no-agenda-uid', 'no-agenda@example.com', 'tenant-a', 'Vendedor', { verAgenda: false, editarAgenda: false }));
+  });
+  await assertFails(getDoc(doc(noAgendaDb, 'agenda', 'agenda-seller-a')));
+  await assertFails(setDoc(doc(noAgendaDb, 'agenda', 'blocked-agenda'), agendaItem('blocked-agenda', 'tenant-a', 'no-agenda-uid')));
+
+  const noLeadsDb = environment.authenticatedContext('no-leads-uid', {
+    email: 'no-leads@example.com',
+    email_verified: true,
+  }).firestore();
+  await assertFails(setDoc(doc(noLeadsDb, 'agenda', 'blocked-linked-lead'), agendaItem('blocked-linked-lead', 'tenant-a', 'no-leads-uid', { leadId: 'lead-seller-a' })));
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'agenda', 'existing-hidden-lead-link'), agendaItem('existing-hidden-lead-link', 'tenant-a', 'no-leads-uid', { leadId: 'lead-seller-a' }));
+  });
+  await assertSucceeds(updateDoc(doc(noLeadsDb, 'agenda', 'existing-hidden-lead-link'), { titulo: 'Compromisso atualizado' }));
+
+  const noClientsDb = environment.authenticatedContext('no-clients-uid', {
+    email: 'no-clients@example.com',
+    email_verified: true,
+  }).firestore();
+  await assertFails(setDoc(doc(noClientsDb, 'agenda', 'blocked-linked-client'), agendaItem('blocked-linked-client', 'tenant-a', 'no-clients-uid', { clienteId: 'client-a' })));
 });
 
 test('allows a verified invitee to create only the profile copied from their invitation', async () => {

@@ -64,6 +64,27 @@ export interface Lead {
   empresaRepresentacaoId: string;
 }
 
+export type AgendaTipo = 'Visita' | 'Tarefa';
+export type AgendaStatus = 'Pendente' | 'Concluída';
+
+/** Visit or task owned by one user and scoped to a single RepresentaPRO tenant. */
+export interface AgendaItem {
+  id: string;
+  empresaRepresentacaoId: string;
+  tipo: AgendaTipo;
+  titulo: string;
+  dataHora: string; // ISO UTC; entered and displayed in the device's local time zone
+  descricao?: string;
+  leadId?: string;
+  clienteId?: string;
+  status: AgendaStatus;
+  responsavelUserId: string;
+  criadoPorUserId: string;
+  criadoEm: string;
+  atualizadoEm: string;
+  concluidoEm?: string;
+}
+
 export interface OrderItem {
   id: string;
   produtoId?: string;
@@ -139,6 +160,9 @@ export interface UserPermissions {
   verLeads?: boolean;
   editarLeads?: boolean;
   verTodosLeads?: boolean;
+  verAgenda?: boolean;
+  editarAgenda?: boolean;
+  verTodaAgenda?: boolean;
   verProdutos?: boolean;
   editarProdutos?: boolean;
   verRepresentadas?: boolean;

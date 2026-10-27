@@ -14,6 +14,13 @@
 // clienteConvertidoId (same-tenant clientes/{id}), convertidoEm (ISO date string).
 // Converted lead fields are write-once; lead deletion is intentionally denied
 // so the prospect history remains available in the tenant.
+// Collection: agenda/{id}
+// Required: id, empresaRepresentacaoId, tipo (Visita | Tarefa), titulo (1-160),
+// dataHora (ISO UTC), status (Pendente | Concluída), responsavelUserId,
+// criadoPorUserId, criadoEm (ISO UTC), atualizadoEm (ISO UTC).
+// Optional: descricao (1500), leadId or clienteId (same-tenant readable record),
+// concluidoEm (ISO UTC, required only while status is Concluída).
+// Tenant, responsible user, creator, and creation time are immutable.
 // ===============================================================
 rules_version = '2';
 service cloud.firestore {
@@ -127,6 +134,43 @@ service cloud.firestore {
       return isSystemAdmin() || leadMemberAccess(data, true);
     }
 
+    function canSeeAllAgenda() {
+      return isSystemAdmin()
+        || (activeMember() && (profile().role == 'Administrador'
+          || profile().get('permissoes', {}).get('verTodaAgenda', false) == true));
+    }
+
+    function ownsAgenda(data) {
+      return activeMember() && data.get('responsavelUserId', '') is string
+        && (data.responsavelUserId == request.auth.uid
+          || data.responsavelUserId == profile().get('legacyId', ''));
+    }
+
+    function canReadAgenda(data) {
+      return canAccessTenant(data.get('empresaRepresentacaoId', ''))
+        && permissionEnabled('verAgenda', true)
+        && (canSeeAllAgenda() || ownsAgenda(data));
+    }
+
+    function canEditAgendaMember(data) {
+      let memberProfile = profile();
+      let permissions = memberProfile.get('permissoes', {});
+      let role = memberProfile.get('role', '');
+      return memberProfile.get('id', '') == request.auth.uid
+        && memberProfile.get('ativo', false) == true
+        && memberProfile.get('email', '') == request.auth.token.email
+        && memberProfile.get('empresaRepresentacaoId', '') == data.get('empresaRepresentacaoId', '')
+        && (role == 'Administrador'
+          || (permissions.get('verAgenda', true) == true
+            && permissions.get('editarAgenda', true) == true
+            && (data.get('responsavelUserId', '') == request.auth.uid
+              || data.get('responsavelUserId', '') == memberProfile.get('legacyId', ''))));
+    }
+
+    function canEditAgenda(data) {
+      return isSystemAdmin() || canEditAgendaMember(data);
+    }
+
     function hasNoSensitiveFields(data) {
       return !data.keys().hasAny(['senha', 'gmailUser', 'gmailAppPass']);
     }
@@ -150,6 +194,7 @@ service cloud.firestore {
         || (permissions is map && permissions.keys().hasOnly([
           'verDashboard', 'verTodasVendas', 'verComissoes', 'verClientes', 'editarClientes',
           'verLeads', 'editarLeads', 'verTodosLeads',
+          'verAgenda', 'editarAgenda', 'verTodaAgenda',
           'verProdutos', 'editarProdutos', 'verRepresentadas', 'verFinanceiro', 'criarPedidos',
           'editarPedidos', 'excluirPedidos', 'gerenciarUsuarios'
         ])
@@ -161,6 +206,9 @@ service cloud.firestore {
         && permissions.get('verLeads', false) is bool
         && permissions.get('editarLeads', false) is bool
         && permissions.get('verTodosLeads', false) is bool
+        && permissions.get('verAgenda', false) is bool
+        && permissions.get('editarAgenda', false) is bool
+        && permissions.get('verTodaAgenda', false) is bool
         && permissions.get('verProdutos', false) is bool
         && permissions.get('editarProdutos', false) is bool
         && permissions.get('verRepresentadas', false) is bool
@@ -362,6 +410,82 @@ service cloud.firestore {
             && linkedConversionClientMatchesLead(id)));
     }
 
+    function validAgendaIsoDateTime(value) {
+      return value is string && value.size() == 24
+        && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$');
+    }
+
+    function canLinkAgendaLeadMember(leadData) {
+      let memberProfile = profile();
+      let role = memberProfile.get('role', '');
+      let permissions = memberProfile.get('permissoes', {});
+      return permissions.get('verLeads', true) == true
+        && (leadData.get('responsavelUserId', '') == request.auth.uid
+          || leadData.get('responsavelUserId', '') == memberProfile.get('legacyId', '')
+          || role == 'Administrador'
+          || permissions.get('verTodosLeads', role == 'Representante') == true);
+    }
+
+    function canLinkAgendaLead(leadData, tenantId, leadId, preserveExisting) {
+      return leadData.get('empresaRepresentacaoId', '') == tenantId
+        && ((preserveExisting && resource.data.get('leadId', '') == leadId)
+          || isSystemAdmin() || canLinkAgendaLeadMember(leadData));
+    }
+
+    function canLinkAgendaClientMember(clientData, tenantId) {
+      let memberProfile = profile();
+      let permissions = memberProfile.get('permissoes', {});
+      let role = memberProfile.get('role', '');
+      return memberProfile.get('id', '') == request.auth.uid
+        && memberProfile.get('ativo', false) == true
+        && memberProfile.get('email', '') == request.auth.token.email
+        && memberProfile.get('empresaRepresentacaoId', '') == tenantId
+        && (role == 'Administrador' || permissions.get('verClientes', true) == true);
+    }
+
+    function canLinkAgendaClient(clientData, tenantId, clientId, preserveExisting) {
+      // The linked collection's own read rules still control whether this user
+      // can open the client. Agenda records can only reference same-tenant IDs.
+      return clientData.get('empresaRepresentacaoId', '') == tenantId
+        && ((preserveExisting && resource.data.get('clienteId', '') == clientId)
+          || isSystemAdmin() || canLinkAgendaClientMember(clientData, tenantId));
+    }
+
+    function validAgendaLinks(data, preserveExisting) {
+      let leadId = data.get('leadId', '');
+      let clientId = data.get('clienteId', '');
+      let leadPath = /databases/$(database)/documents/leads/$(leadId);
+      let clientPath = /databases/$(database)/documents/clientes/$(clientId);
+      return (leadId == '' || clientId == '')
+        && (leadId == '' || (validId(leadId) && exists(leadPath)
+          && canLinkAgendaLead(get(leadPath).data, data.empresaRepresentacaoId, leadId, preserveExisting)))
+        && (clientId == '' || (validId(clientId) && exists(clientPath)
+          && canLinkAgendaClient(get(clientPath).data, data.empresaRepresentacaoId, clientId, preserveExisting)));
+    }
+
+    function validAgenda(data, id, preserveExisting) {
+      return validTenantRecord(data, id)
+        && data.keys().hasAll([
+          'tipo', 'titulo', 'dataHora', 'status', 'responsavelUserId', 'criadoPorUserId', 'criadoEm', 'atualizadoEm'
+        ])
+        && data.keys().hasOnly([
+          'id', 'empresaRepresentacaoId', 'tipo', 'titulo', 'dataHora', 'descricao', 'leadId', 'clienteId',
+          'status', 'responsavelUserId', 'criadoPorUserId', 'criadoEm', 'atualizadoEm', 'concluidoEm'
+        ])
+        && data.tipo in ['Visita', 'Tarefa']
+        && data.titulo is string && data.titulo.size() > 0 && data.titulo.size() <= 160
+        && validAgendaIsoDateTime(data.dataHora)
+        && data.status in ['Pendente', 'Concluída']
+        && data.responsavelUserId is string && data.responsavelUserId.size() > 0 && data.responsavelUserId.size() <= 128
+        && data.criadoPorUserId is string && data.criadoPorUserId.size() > 0 && data.criadoPorUserId.size() <= 128
+        && validAgendaIsoDateTime(data.criadoEm)
+        && validAgendaIsoDateTime(data.atualizadoEm)
+        && (!data.keys().hasAny(['descricao']) || (data.descricao is string && data.descricao.size() <= 1500))
+        && validAgendaLinks(data, preserveExisting)
+        && ((data.status == 'Concluída' && validAgendaIsoDateTime(data.get('concluidoEm', '')))
+          || (data.status == 'Pendente' && !data.keys().hasAny(['concluidoEm'])));
+    }
+
     function orderFinancialFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys()
         .hasAny(['statusComissao', 'comissaoPercentual', 'valorComissao']);
@@ -492,6 +616,25 @@ service cloud.firestore {
         && request.resource.data.criadoEm == resource.data.criadoEm
         && canEditLead(resource.data)
         && validLeadConversion(id);
+    }
+
+    match /agenda/{id} {
+      allow get, list: if canReadAgenda(resource.data);
+      allow create: if validAgenda(request.resource.data, id, false)
+        && request.resource.data.status == 'Pendente'
+        && request.resource.data.responsavelUserId == request.auth.uid
+        && request.resource.data.criadoPorUserId == request.auth.uid
+        && permissionEnabled('verAgenda', true)
+        && permissionEnabled('editarAgenda', true)
+        && canAccessTenant(request.resource.data.empresaRepresentacaoId);
+      allow update: if validAgenda(request.resource.data, id, true)
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && request.resource.data.responsavelUserId == resource.data.responsavelUserId
+        && request.resource.data.criadoPorUserId == resource.data.criadoPorUserId
+        && request.resource.data.criadoEm == resource.data.criadoEm
+        && canEditAgenda(resource.data);
+      allow delete: if canEditAgenda(resource.data)
+        && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
     }
 
     match /produtos/{id} {
