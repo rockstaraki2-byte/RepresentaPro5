@@ -30,7 +30,38 @@ export interface Cliente {
   email: string;
   contato: string;
   tipoFaturamento?: 'Nf 100%' | 'Nf 50%' | 'Nf 0%' | 'Nf pauta' | 'Nota Fiscal' | 'Notinha' | string; // Opção de Faturamento
+  leadOrigemId?: string; // Preserves the CRM link when a prospect becomes a customer
   empresaRepresentacaoId?: string; // Multi-tenant link
+}
+
+export type LeadEtapa = 'Novo' | 'Contatado' | 'Em negociação' | 'Perdido' | 'Convertido';
+
+/** Prospect belonging to one RepresentaPRO tenant. Converted leads retain their history. */
+export interface Lead {
+  id: string;
+  nomeFantasia: string;
+  razaoSocial?: string;
+  cnpj?: string;
+  endereco?: string;
+  cidade?: string;
+  uf?: string;
+  telefone?: string;
+  email?: string;
+  contato?: string;
+  origem?: string;
+  etapa: LeadEtapa;
+  representadaId?: string;
+  responsavelUserId: string;
+  proximaAcao?: string;
+  dataProximaAcao?: string; // YYYY-MM-DD, produced by an HTML date input
+  observacoes?: string;
+  motivoPerda?: string;
+  clienteConvertidoId?: string;
+  convertidoEm?: string;
+  criadoPorUserId: string;
+  criadoEm: string;
+  atualizadoEm: string;
+  empresaRepresentacaoId: string;
 }
 
 export interface OrderItem {
@@ -105,6 +136,9 @@ export interface UserPermissions {
   verComissoes?: boolean;
   verClientes?: boolean;
   editarClientes?: boolean;
+  verLeads?: boolean;
+  editarLeads?: boolean;
+  verTodosLeads?: boolean;
   verProdutos?: boolean;
   editarProdutos?: boolean;
   verRepresentadas?: boolean;

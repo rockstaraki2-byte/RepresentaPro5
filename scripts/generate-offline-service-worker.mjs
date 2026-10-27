@@ -1,26 +1,16 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const distDir = path.resolve('dist');
-const assetsDir = path.join(distDir, 'assets');
 const templatePath = path.resolve('public/sw.js');
 const outputPath = path.join(distDir, 'sw.js');
-const sourceAssetPattern = /\.(?:js|mjs|css|svg|png|jpe?g|webp|woff2?|ttf)$/i;
-
-async function listAssets(directory, prefix = '') {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = await Promise.all(entries.map(async (entry) => {
-    const relativePath = path.posix.join(prefix, entry.name);
-    if (entry.isDirectory()) return listAssets(path.join(directory, entry.name), relativePath);
-    return sourceAssetPattern.test(entry.name) ? [`/assets/${relativePath}`] : [];
-  }));
-  return files.flat();
-}
-
-const buildAssets = (await listAssets(assetsDir)).sort();
+const html = await readFile(path.join(distDir, 'index.html'), 'utf8');
+const buildAssets = [...new Set(
+  [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]),
+)].sort();
 if (!buildAssets.some((asset) => asset.endsWith('.js')) || !buildAssets.some((asset) => asset.endsWith('.css'))) {
-  throw new Error('Não encontrei os arquivos JavaScript e CSS do app em dist/assets.');
+  throw new Error('Não encontrei o JavaScript e o CSS iniciais do app em dist/index.html.');
 }
 
 const template = await readFile(templatePath, 'utf8');
@@ -34,4 +24,4 @@ const serviceWorker = template
   .replace(marker, `const BUILD_ASSETS = ${JSON.stringify(buildAssets)};`);
 
 await writeFile(outputPath, serviceWorker);
-console.log(`Service worker preparado para offline: ${buildAssets.length} arquivos da versão ${buildId}.`);
+console.log(`Service worker preparado: ${buildAssets.length} arquivos iniciais pré-carregados; telas e recursos adicionais serão guardados ao serem acessados.`);

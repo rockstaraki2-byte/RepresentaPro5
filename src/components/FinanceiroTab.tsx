@@ -32,7 +32,6 @@ import {
   BarChart, 
   Bar 
 } from 'recharts';
-import { gerarComissoesPDF, gerarProvisionamentoPDF, gerarResumoMensalPDF } from '../lib/pdfGenerator';
 
 interface FinanceiroTabProps {
   pedidos: Pedido[];
@@ -394,7 +393,10 @@ export default function FinanceiroTab({
                   ))}
                 </select>
                 <button
-                  onClick={() => gerarResumoMensalPDF(pedidos, clientes, representadas, selectedReportMonth, empresaRepresentacao)}
+                  onClick={async () => {
+                    const { gerarResumoMensalPDF } = await import('../lib/pdfGenerator');
+                    gerarResumoMensalPDF(pedidos, clientes, representadas, selectedReportMonth, empresaRepresentacao);
+                  }}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
                   title="Exportar Relatório de Desempenho Mensal"
                 >
@@ -404,7 +406,10 @@ export default function FinanceiroTab({
               </div>
 
               <button
-                onClick={() => gerarComissoesPDF(filteredComissoesPedidos, clientes, representadas, empresaRepresentacao)}
+                onClick={async () => {
+                  const { gerarComissoesPDF } = await import('../lib/pdfGenerator');
+                  gerarComissoesPDF(filteredComissoesPedidos, clientes, representadas, empresaRepresentacao);
+                }}
                 className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ml-auto sm:ml-0"
                 title="Exportar Espelho de Comissões"
               >
@@ -646,7 +651,10 @@ export default function FinanceiroTab({
               </button>
 
               <button
-                onClick={() => gerarProvisionamentoPDF(filteredProvisionedInstallments, provisaoMonthFilter, provisaoSummary.totalRevenue, provisaoSummary.totalExpense, empresaRepresentacao)}
+                onClick={async () => {
+                  const { gerarProvisionamentoPDF } = await import('../lib/pdfGenerator');
+                  gerarProvisionamentoPDF(filteredProvisionedInstallments, provisaoMonthFilter, provisaoSummary.totalRevenue, provisaoSummary.totalExpense, empresaRepresentacao);
+                }}
                 className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ml-auto sm:ml-0"
               >
                 <Download className="w-3.5 h-3.5" />

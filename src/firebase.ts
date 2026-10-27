@@ -1,5 +1,3 @@
-import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import {
   collection,
@@ -28,28 +26,16 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import type {
   Representada,
   Cliente,
+  Lead,
   Pedido,
   Produto,
   EmpresaRepresentacao,
   Usuario,
   MetaVendas,
 } from './types';
+import { app, auth, isSystemAdminAccount } from './firebase-app';
 
-// Firebase web configuration is public by design. Restrict this key to the
-// production domains in Google Cloud; it is not an authorization mechanism.
-const firebaseConfig = {
-  apiKey: 'AIzaSyBF2sweJQHuc_I3S71dPjw0_5pEUQOzuu8',
-  authDomain: 'representapro-b84c3.firebaseapp.com',
-  projectId: 'representapro-b84c3',
-  storageBucket: 'representapro-b84c3.firebasestorage.app',
-  messagingSenderId: '948207221757',
-  appId: '1:948207221757:web:be1da69bbe4490076af794',
-  measurementId: 'G-K4P1RYCKW5',
-};
-
-export const SYSTEM_ADMIN_EMAIL = 'rockstaraki2@gmail.com';
-export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export { app, auth, SYSTEM_ADMIN_EMAIL, isSystemAdminAccount } from './firebase-app';
 
 // Persistent cache supports offline visits on a representative's trusted device.
 // Server requests remain protected by Firestore rules; cached data is cleared
@@ -137,7 +123,6 @@ if (typeof window !== 'undefined' && appCheckSiteKey) {
 }
 
 if (import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }
 
@@ -174,10 +159,6 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(message);
 }
 
-export function isSystemAdminAccount(user: FirebaseUser | null | undefined): boolean {
-  return Boolean(user?.emailVerified && user.email?.toLowerCase() === SYSTEM_ADMIN_EMAIL);
-}
-
 function requireTenant(scope: TenantScope): void {
   if (!scope.systemAdmin && !scope.tenantId) {
     throw new Error('A empresa do usuário autenticado não foi encontrada.');
@@ -186,6 +167,10 @@ function requireTenant(scope: TenantScope): void {
 
 function canSeeAllOrders(user?: Usuario): boolean {
   return Boolean(user && (user.role === 'Administrador' || (user.permissoes?.verTodasVendas ?? user.role === 'Representante')));
+}
+
+function canSeeAllLeads(user?: Usuario): boolean {
+  return Boolean(user && (user.role === 'Administrador' || (user.permissoes?.verTodosLeads ?? user.role === 'Representante')));
 }
 
 export function scopedCollection(name: string, scope: TenantScope, owner?: Usuario): Query {
@@ -198,6 +183,10 @@ export function scopedCollection(name: string, scope: TenantScope, owner?: Usuar
   if (name === 'pedidos' && !scope.systemAdmin && owner?.id && !canSeeAllOrders(owner)) {
     const userIds = Array.from(new Set([owner.id, owner.legacyId].filter((id): id is string => Boolean(id))));
     return query(scoped, where('createdByUserId', 'in', userIds));
+  }
+  if (name === 'leads' && !scope.systemAdmin && owner?.id && !canSeeAllLeads(owner)) {
+    const userIds = Array.from(new Set([owner.id, owner.legacyId].filter((id): id is string => Boolean(id))));
+    return query(scoped, where('responsavelUserId', 'in', userIds));
   }
   return scoped;
 }
@@ -332,6 +321,52 @@ export async function deleteCliente(id: string): Promise<void> {
     await deleteDoc(doc(db, 'clientes', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, 'clientes');
+  }
+}
+
+export async function getLeads(scope: TenantScope, user?: Usuario, forceServer = false): Promise<Lead[]> {
+  const scoped = scopedCollection('leads', scope, user);
+  try {
+    const snapshot = await readQuery(scoped, forceServer);
+    return snapshot.docs.map((item) => item.data() as Lead);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'leads');
+  }
+}
+
+export async function saveLead(lead: Lead): Promise<void> {
+  try {
+    await setDoc(doc(db, 'leads', lead.id), removeUndefinedFields(lead));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'leads');
+  }
+}
+
+export class LeadConversionError extends Error {
+  clientSaved: boolean;
+
+  constructor(message: string, clientSaved: boolean) {
+    super(message);
+    this.name = 'LeadConversionError';
+    this.clientSaved = clientSaved;
+  }
+}
+
+/** Creates a linked customer first, then finalizes the lead conversion. */
+export async function convertLeadToCliente(lead: Lead, cliente: Cliente): Promise<void> {
+  const linkedCliente = { ...cliente, leadOrigemId: lead.id };
+  try {
+    await setDoc(doc(db, 'clientes', linkedCliente.id), removeUndefinedFields(linkedCliente));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'clientes');
+  }
+
+  try {
+    await updateDoc(doc(db, 'leads', lead.id), removeUndefinedFields(lead));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('Lead conversion finalization failed', { operationType: OperationType.UPDATE, path: 'leads', message });
+    throw new LeadConversionError('O cliente foi salvo, mas o lead ainda não foi finalizado.', true);
   }
 }
 

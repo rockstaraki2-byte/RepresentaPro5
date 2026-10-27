@@ -15,6 +15,14 @@
         { "fieldPath": "empresaRepresentacaoId", "order": "ASCENDING" },
         { "fieldPath": "createdByUserId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "leads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "empresaRepresentacaoId", "order": "ASCENDING" },
+        { "fieldPath": "responsavelUserId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

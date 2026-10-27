@@ -252,35 +252,40 @@ export default function AdminTab({
     if (preset === 'todos') {
       perms = {
         verDashboard: true, verTodasVendas: true, verComissoes: true,
-        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: true,
+        verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: true,
+        verProdutos: true, editarProdutos: true,
         verRepresentadas: true, verFinanceiro: true, criarPedidos: true, editarPedidos: true,
         excluirPedidos: true, gerenciarUsuarios: true
       };
     } else if (preset === 'vendedor_padrao') {
       perms = {
         verDashboard: true, verTodasVendas: false, verComissoes: false,
-        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: false,
+        verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: false,
+        verProdutos: true, editarProdutos: false,
         verRepresentadas: true, verFinanceiro: false, criarPedidos: true, editarPedidos: true,
         excluirPedidos: false, gerenciarUsuarios: false
       };
     } else if (preset === 'vendedor_avancado') {
       perms = {
         verDashboard: true, verTodasVendas: true, verComissoes: true,
-        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: true,
+        verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: true,
+        verProdutos: true, editarProdutos: true,
         verRepresentadas: true, verFinanceiro: false, criarPedidos: true, editarPedidos: true,
         excluirPedidos: false, gerenciarUsuarios: false
       };
     } else if (preset === 'representante_completo') {
       perms = {
         verDashboard: true, verTodasVendas: true, verComissoes: true,
-        verClientes: true, editarClientes: true, verProdutos: true, editarProdutos: true,
+        verClientes: true, editarClientes: true, verLeads: true, editarLeads: true, verTodosLeads: true,
+        verProdutos: true, editarProdutos: true,
         verRepresentadas: true, verFinanceiro: true, criarPedidos: true, editarPedidos: true,
         excluirPedidos: true, gerenciarUsuarios: false
       };
     } else {
       perms = {
         verDashboard: false, verTodasVendas: false, verComissoes: false,
-        verClientes: false, editarClientes: false, verProdutos: false, editarProdutos: false,
+        verClientes: false, editarClientes: false, verLeads: false, editarLeads: false, verTodosLeads: false,
+        verProdutos: false, editarProdutos: false,
         verRepresentadas: false, verFinanceiro: false, criarPedidos: false, editarPedidos: false,
         excluirPedidos: false, gerenciarUsuarios: false
       };
@@ -1008,6 +1013,9 @@ export default function AdminTab({
                       { key: 'excluirPedidos', label: '🗑️ Excluir Pedidos', desc: 'Permissão para apagar pedidos do sistema' },
                       { key: 'verClientes', label: '👥 Carteira de Clientes', desc: 'Acessar a lista e consulta de clientes' },
                       { key: 'editarClientes', label: '➕ Cadastrar / Editar Clientes', desc: 'Permissão para cadastrar e alterar clientes' },
+                      { key: 'verLeads', label: '🎯 CRM / Prospecção', desc: 'Acessar oportunidades comerciais' },
+                      { key: 'editarLeads', label: '➕ Cadastrar / Editar Leads', desc: 'Criar e atualizar oportunidades' },
+                      { key: 'verTodosLeads', label: '🌐 Ver Leads da Empresa', desc: 'Se desativado, o usuário enxerga apenas os leads sob sua responsabilidade' },
                       { key: 'verProdutos', label: '📦 Catálogo de Produtos', desc: 'Acessar a lista e preços dos produtos' },
                       { key: 'editarProdutos', label: '✏️ Cadastrar / Editar Produtos', desc: 'Permissão para alterar catálogo de produtos' },
                       { key: 'verRepresentadas', label: '🏭 Representadas / Fábricas', desc: 'Visualizar fornecedores e indústrias' },

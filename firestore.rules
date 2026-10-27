@@ -1,3 +1,20 @@
+// ===============================================================
+// CRM Leads data model
+// ===============================================================
+// Collection: leads/{id}
+// Required: id (string, document ID), empresaRepresentacaoId (string, immutable
+// tenant), nomeFantasia (string, 1-200), etapa (Novo | Contatado | Em negociação
+// | Perdido | Convertido), responsavelUserId (string, immutable), criadoPorUserId
+// (string, immutable), criadoEm (ISO date string, immutable), atualizadoEm
+// (ISO date string).
+// Optional strings with explicit limits: razaoSocial (250), cnpj (25), endereco
+// (250), cidade (120), uf (2), telefone (40), email (254), contato (150), origem
+// (80), representadaId (same-tenant representadas/{id}), proximaAcao (160),
+// dataProximaAcao (YYYY-MM-DD), observacoes (1500), motivoPerda (300),
+// clienteConvertidoId (same-tenant clientes/{id}), convertidoEm (ISO date string).
+// Converted lead fields are write-once; lead deletion is intentionally denied
+// so the prospect history remains available in the tenant.
+// ===============================================================
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -72,6 +89,44 @@ service cloud.firestore {
         && (canSeeAllOrders() || ownsOrder(data));
     }
 
+    function canSeeAllLeads() {
+      return isSystemAdmin()
+        || (activeMember() && (profile().role == 'Administrador'
+          || profile().get('permissoes', {}).get(
+            'verTodosLeads', profile().role == 'Representante'
+          ) == true));
+    }
+
+    function ownsLead(data) {
+      return activeMember() && data.get('responsavelUserId', '') is string
+        && (data.responsavelUserId == request.auth.uid
+          || data.responsavelUserId == profile().get('legacyId', ''));
+    }
+
+    function leadMemberAccess(data, requireEdit) {
+      let memberProfile = profile();
+      let role = memberProfile.get('role', '');
+      let permissions = memberProfile.get('permissoes', {});
+      return activeMember()
+        && data.get('empresaRepresentacaoId', '') == memberProfile.get('empresaRepresentacaoId', '')
+        && (role == 'Administrador'
+          || (permissions.get('verLeads', true) == true
+            && (!requireEdit || permissions.get('editarLeads', true) == true)
+            && (permissions.get('verTodosLeads', role == 'Representante') == true
+              || data.get('responsavelUserId', '') == request.auth.uid
+              || data.get('responsavelUserId', '') == memberProfile.get('legacyId', ''))));
+    }
+
+    function canReadLead(data) {
+      return canAccessTenant(data.get('empresaRepresentacaoId', ''))
+        && permissionEnabled('verLeads', true)
+        && (canSeeAllLeads() || ownsLead(data));
+    }
+
+    function canEditLead(data) {
+      return isSystemAdmin() || leadMemberAccess(data, true);
+    }
+
     function hasNoSensitiveFields(data) {
       return !data.keys().hasAny(['senha', 'gmailUser', 'gmailAppPass']);
     }
@@ -94,6 +149,7 @@ service cloud.firestore {
       return !data.keys().hasAny(['permissoes'])
         || (permissions is map && permissions.keys().hasOnly([
           'verDashboard', 'verTodasVendas', 'verComissoes', 'verClientes', 'editarClientes',
+          'verLeads', 'editarLeads', 'verTodosLeads',
           'verProdutos', 'editarProdutos', 'verRepresentadas', 'verFinanceiro', 'criarPedidos',
           'editarPedidos', 'excluirPedidos', 'gerenciarUsuarios'
         ])
@@ -102,6 +158,9 @@ service cloud.firestore {
         && permissions.get('verComissoes', false) is bool
         && permissions.get('verClientes', false) is bool
         && permissions.get('editarClientes', false) is bool
+        && permissions.get('verLeads', false) is bool
+        && permissions.get('editarLeads', false) is bool
+        && permissions.get('verTodosLeads', false) is bool
         && permissions.get('verProdutos', false) is bool
         && permissions.get('editarProdutos', false) is bool
         && permissions.get('verRepresentadas', false) is bool
@@ -192,7 +251,115 @@ service cloud.firestore {
         && data.nomeFantasia is string && data.nomeFantasia.size() > 0 && data.nomeFantasia.size() <= 200
         && data.cnpj is string && data.cnpj.size() <= 25
         && (!data.keys().hasAny(['email']) || data.email is string)
-        && (!data.keys().hasAny(['telefone']) || data.telefone is string);
+        && (!data.keys().hasAny(['telefone']) || data.telefone is string)
+        && (!data.keys().hasAny(['leadOrigemId'])
+          || (data.leadOrigemId is string && data.leadOrigemId.size() <= 128));
+    }
+
+    function validLeadSourceClient(data) {
+      let leadId = data.get('leadOrigemId', '');
+      let leadPath = /databases/$(database)/documents/leads/$(leadId);
+      return !data.keys().hasAny(['leadOrigemId'])
+        || (validId(leadId)
+          && data.id == leadId
+          && exists(leadPath)
+          && canEditLead(get(leadPath).data)
+          && get(leadPath).data.get('etapa', '') in ['Novo', 'Contatado', 'Em negociação']
+          && get(leadPath).data.get('empresaRepresentacaoId', '') == data.empresaRepresentacaoId
+          && get(leadPath).data.get('nomeFantasia', '') == data.nomeFantasia
+          && get(leadPath).data.get('cnpj', '') == data.get('cnpj', ''));
+    }
+
+    function validOptionalLeadString(data, field, maxLength) {
+      return !data.keys().hasAny([field])
+        || (data.get(field, '') is string && data.get(field, '').size() <= maxLength);
+    }
+
+    function validOptionalLeadDate(data) {
+      return !data.keys().hasAny(['dataProximaAcao'])
+        || (data.dataProximaAcao is string
+          && data.dataProximaAcao.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+    }
+
+    function validLeadRepresentada(data) {
+      let representadaId = data.get('representadaId', '');
+      let representadaPath = /databases/$(database)/documents/representadas/$(representadaId);
+      return representadaId == ''
+        || (validId(representadaId) && exists(representadaPath)
+          && get(representadaPath).data.get('empresaRepresentacaoId', '') == data.empresaRepresentacaoId);
+    }
+
+    function validLead(data, id) {
+      return validTenantRecord(data, id)
+        && data.keys().hasAll([
+          'nomeFantasia', 'etapa', 'responsavelUserId', 'criadoPorUserId', 'criadoEm', 'atualizadoEm'
+        ])
+        && data.keys().hasOnly([
+          'id', 'empresaRepresentacaoId', 'nomeFantasia', 'razaoSocial', 'cnpj', 'endereco',
+          'cidade', 'uf', 'telefone', 'email', 'contato', 'origem', 'etapa', 'representadaId',
+          'responsavelUserId', 'proximaAcao', 'dataProximaAcao', 'observacoes', 'motivoPerda',
+          'clienteConvertidoId', 'convertidoEm', 'criadoPorUserId', 'criadoEm', 'atualizadoEm'
+        ])
+        && data.nomeFantasia is string && data.nomeFantasia.size() > 0 && data.nomeFantasia.size() <= 200
+        && data.etapa in ['Novo', 'Contatado', 'Em negociação', 'Perdido', 'Convertido']
+        && data.responsavelUserId is string && data.responsavelUserId.size() > 0 && data.responsavelUserId.size() <= 128
+        && data.criadoPorUserId is string && data.criadoPorUserId.size() > 0 && data.criadoPorUserId.size() <= 128
+        && data.criadoEm is string && data.criadoEm.size() > 0 && data.criadoEm.size() <= 40
+        && data.atualizadoEm is string && data.atualizadoEm.size() > 0 && data.atualizadoEm.size() <= 40
+        && validOptionalLeadString(data, 'razaoSocial', 250)
+        && validOptionalLeadString(data, 'cnpj', 25)
+        && validOptionalLeadString(data, 'endereco', 250)
+        && validOptionalLeadString(data, 'cidade', 120)
+        && validOptionalLeadString(data, 'uf', 2)
+        && validOptionalLeadString(data, 'telefone', 40)
+        && validOptionalLeadString(data, 'email', 254)
+        && validOptionalLeadString(data, 'contato', 150)
+        && validOptionalLeadString(data, 'origem', 80)
+        && validOptionalLeadString(data, 'proximaAcao', 160)
+        && validOptionalLeadString(data, 'observacoes', 1500)
+        && validOptionalLeadString(data, 'motivoPerda', 300)
+        && validOptionalLeadDate(data)
+        && validLeadRepresentada(data)
+        && ((data.etapa == 'Perdido' && data.get('motivoPerda', '') is string
+              && data.get('motivoPerda', '').size() > 0)
+          || data.etapa != 'Perdido')
+        && ((data.etapa == 'Convertido'
+              && data.get('clienteConvertidoId', '') is string
+              && validId(data.clienteConvertidoId)
+              && data.get('convertidoEm', '') is string && data.convertidoEm.size() > 0 && data.convertidoEm.size() <= 40)
+          || (data.etapa != 'Convertido'
+              && !data.keys().hasAny(['clienteConvertidoId', 'convertidoEm'])));
+    }
+
+    function leadIdentityCanChange(id) {
+      let clientPath = /databases/$(database)/documents/clientes/$(id);
+      let identityChanged = request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['nomeFantasia', 'cnpj']);
+      return !identityChanged
+        || !exists(clientPath)
+        || get(clientPath).data.get('leadOrigemId', '') != id;
+    }
+
+    function linkedConversionClientMatchesLead(id) {
+      let clientPath = /databases/$(database)/documents/clientes/$(id);
+      return exists(clientPath)
+        && get(clientPath).data.get('id', '') == id
+        && get(clientPath).data.get('leadOrigemId', '') == id
+        && get(clientPath).data.get('empresaRepresentacaoId', '') == resource.data.empresaRepresentacaoId
+        && get(clientPath).data.get('nomeFantasia', '') == request.resource.data.nomeFantasia
+        && get(clientPath).data.get('cnpj', '') == request.resource.data.get('cnpj', '');
+    }
+
+    function validLeadConversion(id) {
+      return resource.data.etapa == 'Convertido'
+        ? request.resource.data.etapa == 'Convertido'
+          && request.resource.data.clienteConvertidoId == resource.data.clienteConvertidoId
+          && request.resource.data.convertidoEm == resource.data.convertidoEm
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['observacoes', 'atualizadoEm'])
+        : (request.resource.data.etapa != 'Convertido'
+          ? leadIdentityCanChange(id)
+          : (request.resource.data.get('clienteConvertidoId', '') == id
+            && linkedConversionClientMatchesLead(id)));
     }
 
     function orderFinancialFieldsUnchanged() {
@@ -294,13 +461,37 @@ service cloud.firestore {
       allow get, list: if canAccessTenant(resource.data.get('empresaRepresentacaoId', ''))
         && permissionEnabled('verClientes', true);
       allow create: if validCliente(request.resource.data, id)
+        && validLeadSourceClient(request.resource.data)
         && permissionEnabled('editarClientes', true)
         && canAccessTenant(request.resource.data.empresaRepresentacaoId);
       allow update: if validCliente(request.resource.data, id)
         && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && request.resource.data.get('leadOrigemId', '') == resource.data.get('leadOrigemId', '')
+        && (resource.data.get('leadOrigemId', '') == ''
+          || (request.resource.data.nomeFantasia == resource.data.nomeFantasia
+            && request.resource.data.get('cnpj', '') == resource.data.get('cnpj', '')))
         && permissionEnabled('editarClientes', true) && canAccessTenant(resource.data.empresaRepresentacaoId);
-      allow delete: if permissionEnabled('editarClientes', true)
+      allow delete: if !resource.data.keys().hasAny(['leadOrigemId'])
+        && permissionEnabled('editarClientes', true)
         && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
+    }
+
+    match /leads/{id} {
+      allow get, list: if canReadLead(resource.data);
+      allow create: if validLead(request.resource.data, id)
+        && request.resource.data.etapa != 'Convertido'
+        && request.resource.data.responsavelUserId == request.auth.uid
+        && request.resource.data.criadoPorUserId == request.auth.uid
+        && permissionEnabled('verLeads', true)
+        && permissionEnabled('editarLeads', true)
+        && canAccessTenant(request.resource.data.empresaRepresentacaoId);
+      allow update: if validLead(request.resource.data, id)
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && request.resource.data.responsavelUserId == resource.data.responsavelUserId
+        && request.resource.data.criadoPorUserId == resource.data.criadoPorUserId
+        && request.resource.data.criadoEm == resource.data.criadoEm
+        && canEditLead(resource.data)
+        && validLeadConversion(id);
     }
 
     match /produtos/{id} {

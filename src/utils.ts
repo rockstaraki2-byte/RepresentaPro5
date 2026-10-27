@@ -11,6 +11,9 @@ export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
       verComissoes: true,
       verClientes: true,
       editarClientes: true,
+      verLeads: true,
+      editarLeads: true,
+      verTodosLeads: true,
       verProdutos: true,
       editarProdutos: true,
       verRepresentadas: true,
@@ -30,6 +33,9 @@ export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
     verComissoes: p.verComissoes !== undefined ? p.verComissoes : (isRep ? true : false),
     verClientes: p.verClientes !== undefined ? p.verClientes : true,
     editarClientes: p.editarClientes !== undefined ? p.editarClientes : true,
+    verLeads: p.verLeads !== undefined ? p.verLeads : true,
+    editarLeads: p.editarLeads !== undefined ? p.editarLeads : true,
+    verTodosLeads: p.verTodosLeads !== undefined ? p.verTodosLeads : isRep,
     verProdutos: p.verProdutos !== undefined ? p.verProdutos : true,
     editarProdutos: p.editarProdutos !== undefined ? p.editarProdutos : (isRep ? true : false),
     verRepresentadas: p.verRepresentadas !== undefined ? p.verRepresentadas : true,
@@ -39,6 +45,25 @@ export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
     excluirPedidos: p.excluirPedidos !== undefined ? p.excluirPedidos : false,
     gerenciarUsuarios: p.gerenciarUsuarios !== undefined ? p.gerenciarUsuarios : false,
   };
+}
+
+export function isValidIsoCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  if (year === 0 || month < 1 || month > 12) return false;
+
+  const isLeapYear = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+  const daysInMonth = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= daysInMonth[month - 1];
+}
+
+export function getLocalIsoCalendarDate(date: Date = new Date()): string {
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export const formatarMoeda = (valor: number): string => {
