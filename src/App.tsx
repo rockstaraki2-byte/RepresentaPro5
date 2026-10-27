@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 21122)
-Total output lines: 1688
-
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
@@ -808,7 +805,105 @@ export default function App() {
       const firebaseServices = await loadFirebaseServices();
       const [repData, cliData, leadData, agendaData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
         getUserPermissions(currentUser).verRepresentadas ? firebaseServices.getRepresentadas(scope, true) : Promise.resolve([]),
-        getUserPermissions(currentUser).verCliente…1122 tokens truncated…dingSync) && (
+        getUserPermissions(currentUser).verClientes ? firebaseServices.getClientes(scope, true) : Promise.resolve([]),
+        getUserPermissions(currentUser).verLeads ? firebaseServices.getLeads(scope, currentUser, true) : Promise.resolve([]),
+        getUserPermissions(currentUser).verAgenda ? firebaseServices.getAgendaItems(scope, currentUser, true) : Promise.resolve([]),
+        firebaseServices.getPedidos(scope, currentUser, true),
+        getUserPermissions(currentUser).verProdutos ? firebaseServices.getProdutos(scope, true) : Promise.resolve([]),
+        firebaseServices.getEmpresas(scope, true),
+        firebaseServices.getUsuarios(scope, currentUser, canManageUsers, true),
+        getUserPermissions(currentUser).verFinanceiro ? firebaseServices.getMeta(scope, true) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
+      ]);
+      setRepresentadas(repData);
+      setClientes(cliData);
+      setLeads(leadData);
+      setAgendaItems(agendaData);
+      setPedidos(pedData);
+      setProdutos(prodData);
+      setEmpresas(empData);
+      setUsuarios(usrData);
+      setMeta(metaData);
+      alert('Dados atualizados a partir do Firestore para a empresa autorizada.');
+    } catch (error: any) {
+      console.error('Falha ao atualizar dados:', error);
+      alert('Não foi possível atualizar os dados. Verifique a conexão e as permissões da conta.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (isDemoMode) {
+      window.location.href = window.location.pathname;
+      return;
+    }
+    if (!navigator.onLine) {
+      setErrorMessage('Para sair com segurança, reconecte-se primeiro. Assim garantimos que alterações pendentes sejam sincronizadas e removemos a cópia offline deste aparelho.');
+      return;
+    }
+
+    let timeoutId: number | undefined;
+    try {
+      const firebaseServices = await loadFirebaseServices();
+      await Promise.race([
+        firebaseServices.waitForOfflineWritesToSync(),
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => reject(new Error('A sincronização ainda está pendente.')), 10000);
+        }),
+      ]);
+    } catch (error: any) {
+      setErrorMessage(error?.message === 'A sincronização ainda está pendente.'
+        ? 'Ainda há alterações aguardando confirmação do servidor. Mantenha o sistema aberto e tente sair novamente quando a sincronização terminar.'
+        : 'Não foi possível confirmar a sincronização. Verifique a conexão antes de sair.');
+      return;
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+    }
+
+    try {
+      const firebaseServices = await loadFirebaseServices();
+      await firebaseServices.clearOfflineFirestoreCache();
+    } catch {
+      alert('Não consegui apagar a cópia offline com segurança. Feche as outras abas do RepresentaPRO e tente sair novamente.');
+      window.location.reload();
+      return;
+    }
+
+    await signOut(auth);
+    Object.keys(localStorage).filter((key) => key.startsWith('rep_')).forEach((key) => localStorage.removeItem(key));
+    window.location.reload();
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#071F38] flex flex-col items-center justify-center p-6 text-white font-sans">
+        <div className="flex flex-col items-center gap-4 text-center max-w-sm">
+          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          <div>
+            <h3 className="font-serif font-extrabold text-lg text-white">RepresentaPRO</h3>
+            <p className="text-xs text-slate-400 mt-1">Sincronizando portal com o Firestore...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#071F38] flex items-center justify-center text-sm text-slate-300">Carregando...</div>}>
+        <LoginScreen initialError={sessionError} />
+      </Suspense>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F6F8FB] text-slate-800 flex flex-col font-sans">
+      {isDemoMode && (
+        <div className="bg-amber-100 text-amber-900 border-b border-amber-200 text-[11px] font-extrabold text-center py-1.5 px-3 tracking-wide">
+          MODO DEMONSTRAÇÃO • dados fictícios • nenhuma alteração é enviada ao banco real
+        </div>
+      )}
+      {!isDemoMode && (!isOnline || isUsingCachedData || hasPendingSync) && (
         <div role="status" aria-live="polite" className={`px-4 py-2 text-center text-[11px] font-bold ${hasPendingSync ? 'bg-amber-100 text-amber-900' : 'bg-blue-50 text-blue-900'}`}>
           {hasPendingSync
             ? 'Alterações salvas neste aparelho e aguardando conexão para sincronizar.'
