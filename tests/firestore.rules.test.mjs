@@ -214,8 +214,63 @@ test('validates lead permissions, fields, tenant, owner, and immutable identity'
     email: 'seller-a@example.com',
     email_verified: true,
   }).firestore();
+
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'representadas', 'rep-a'), { id: 'rep-a', empresaRepresentacaoId: 'tenant-a' });
+    await setDoc(doc(db, 'representadas', 'rep-b'), { id: 'rep-b', empresaRepresentacaoId: 'tenant-b' });
+  });
+
   const newLead = lead('new-lead-a', 'tenant-a', 'seller-a-uid');
   await assertSucceeds(setDoc(doc(sellerDb, 'leads', newLead.id), newLead));
+  const formLead = {
+    ...lead('form-lead-a', 'tenant-a', 'seller-a-uid'),
+    razaoSocial: '',
+    cnpj: '',
+    endereco: '',
+    cidade: '',
+    uf: '',
+    telefone: '',
+    email: '',
+    contato: '',
+    origem: '',
+    representadaId: 'rep-a',
+    proximaAcao: '',
+    observacoes: '',
+    motivoPerda: '',
+  };
+  const optionalTextFields = [
+    'razaoSocial', 'cnpj', 'endereco', 'cidade', 'uf', 'telefone', 'email',
+    'contato', 'origem', 'representadaId', 'proximaAcao', 'dataProximaAcao', 'observacoes', 'motivoPerda',
+  ];
+  const firestoreFormLead = { ...formLead };
+  for (const field of optionalTextFields) {
+    if (firestoreFormLead[field] === '') delete firestoreFormLead[field];
+  }
+  await assertSucceeds(setDoc(doc(sellerDb, 'leads', formLead.id), firestoreFormLead));
+  const completeFormLead = {
+    ...formLead,
+    id: 'complete-form-lead-a',
+    razaoSocial: 'Empresa Prospecto',
+    cnpj: '12345678000199',
+    endereco: 'Rua Exemplo, 123',
+    cidade: 'São Paulo',
+    uf: 'SP',
+    telefone: '+55 11 99999-0000',
+    email: 'contato@example.com',
+    contato: 'Pessoa de contato',
+    origem: 'Indicação',
+    representadaId: 'rep-a',
+    proximaAcao: 'Ligar na próxima semana',
+    dataProximaAcao: '2026-11-03',
+    observacoes: 'x'.repeat(1500),
+  };
+  await assertSucceeds(setDoc(doc(sellerDb, 'leads', completeFormLead.id), completeFormLead));
+  await assertFails(setDoc(doc(sellerDb, 'leads', 'cross-tenant-representada'), {
+    ...firestoreFormLead,
+    id: 'cross-tenant-representada',
+    representadaId: 'rep-b',
+  }));
   await assertFails(setDoc(doc(sellerDb, 'leads', 'new-lead-b'), lead('new-lead-b', 'tenant-b', 'seller-a-uid')));
   await assertFails(setDoc(doc(sellerDb, 'leads', 'wrong-owner'), lead('wrong-owner', 'tenant-a', 'someone-else')));
   await assertFails(setDoc(doc(sellerDb, 'leads', 'missing-name'), { ...lead('missing-name', 'tenant-a', 'seller-a-uid'), nomeFantasia: '' }));
@@ -231,6 +286,7 @@ test('validates lead permissions, fields, tenant, owner, and immutable identity'
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { empresaRepresentacaoId: 'tenant-b' }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { responsavelUserId: 'someone-else' }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { criadoEm: '2099-01-01T00:00:00.000Z' }));
+  await assertSucceeds(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { observacoes: 'x'.repeat(1500) }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { observacoes: 'x'.repeat(1501) }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { dataProximaAcao: '26/10/2026' }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { extraData: 'unexpected' }));

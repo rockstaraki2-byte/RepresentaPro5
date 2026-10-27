@@ -12,6 +12,7 @@
     "test:offline-shell": "node tests/offline-shell.test.mjs",
     "lint": "tsc --noEmit",
     "test:lead-date": "tsx tests/lead-date.test.ts",
+    "test:lead-payload": "tsx --test tests/lead-firestore-payload.test.ts",
     "test:firestore-rules": "npx --yes firebase-tools@14.27.0 emulators:exec --project demo-representapro-security --only firestore \"node tests/firestore.rules.test.mjs\"",
     "audit:firestore-tenants": "node scripts/audit-firestore-tenant-readiness.mjs",
     "cleanup:firestore-secrets": "node scripts/cleanup-firestore-sensitive-fields.mjs"
