@@ -340,6 +340,16 @@ service cloud.firestore {
         || get(clientPath).data.get('leadOrigemId', '') != id;
     }
 
+    function linkedConversionClientMatchesLead(id) {
+      let clientPath = /databases/$(database)/documents/clientes/$(id);
+      return exists(clientPath)
+        && get(clientPath).data.get('id', '') == id
+        && get(clientPath).data.get('leadOrigemId', '') == id
+        && get(clientPath).data.get('empresaRepresentacaoId', '') == resource.data.empresaRepresentacaoId
+        && get(clientPath).data.get('nomeFantasia', '') == request.resource.data.nomeFantasia
+        && get(clientPath).data.get('cnpj', '') == request.resource.data.get('cnpj', '');
+    }
+
     function validLeadConversion(id) {
       return resource.data.etapa == 'Convertido'
         ? request.resource.data.etapa == 'Convertido'
@@ -349,7 +359,7 @@ service cloud.firestore {
         : (request.resource.data.etapa != 'Convertido'
           ? leadIdentityCanChange(id)
           : (request.resource.data.get('clienteConvertidoId', '') == id
-            && exists(/databases/$(database)/documents/clientes/$(id))));
+            && linkedConversionClientMatchesLead(id)));
     }
 
     function orderFinancialFieldsUnchanged() {

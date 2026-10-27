@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { Cliente, EmpresaRepresentacao, Lead, LeadEtapa, Representada, Usuario } from '../types';
-import { formatarCNPJ, formatarData } from '../utils';
+import { formatarCNPJ, formatarData, getLocalIsoCalendarDate, isValidIsoCalendarDate } from '../utils';
 
 interface LeadsTabProps {
   leads: Lead[];
@@ -161,6 +161,10 @@ export default function LeadsTab({
       setFormError('Informe o nome da empresa ou do prospect.');
       return;
     }
+    if (form.dataProximaAcao && !isValidIsoCalendarDate(form.dataProximaAcao)) {
+      setFormError('A data da próxima ação não existe no calendário. Informe uma data válida.');
+      return;
+    }
     const cleanCnpj = normalizeDocument(form.cnpj);
     if (cleanCnpj && cleanCnpj.length !== 14) {
       setFormError('Se informado, o CNPJ deve conter 14 dígitos.');
@@ -262,7 +266,7 @@ export default function LeadsTab({
     }
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalIsoCalendarDate();
   const representadasDoTenant = representadas.filter((item) => item.empresaRepresentacaoId === form.empresaRepresentacaoId);
 
   return (

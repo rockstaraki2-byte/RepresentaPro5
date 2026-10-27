@@ -196,6 +196,7 @@ test('scopes leads by tenant and responsible seller', async () => {
   await assertFails(getDocsFromServer(query(collection(sellerDb, 'leads'), where('empresaRepresentacaoId', '==', 'tenant-a'))));
   await assertFails(getDoc(doc(sellerDb, 'leads', 'lead-seller-b')));
   await assertFails(getDoc(doc(sellerDb, 'leads', 'lead-tenant-b')));
+  await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-tenant-b'), { observacoes: 'tentativa de alteração entre empresas' }));
 
   const representativeDb = environment.authenticatedContext('rep-a-uid', {
     email: 'rep-a@example.com',
@@ -231,6 +232,7 @@ test('validates lead permissions, fields, tenant, owner, and immutable identity'
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { responsavelUserId: 'someone-else' }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { criadoEm: '2099-01-01T00:00:00.000Z' }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { observacoes: 'x'.repeat(1501) }));
+  await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { dataProximaAcao: '26/10/2026' }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { extraData: 'unexpected' }));
   await assertFails(updateDoc(doc(sellerDb, 'leads', 'lead-seller-a'), { origem: 42 }));
   await assertFails(deleteDoc(doc(sellerDb, 'leads', 'lead-seller-a')));
@@ -257,6 +259,23 @@ test('converts a lead through one linked client and rejects cross-tenant links',
   };
 
   await assertFails(updateDoc(leadRef, conversion));
+
+  const crossTenantLeadId = 'cross-tenant-conversion';
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const adminDb = context.firestore();
+    await setDoc(doc(adminDb, 'leads', crossTenantLeadId), lead(crossTenantLeadId, 'tenant-a', 'seller-a-uid'));
+    await setDoc(doc(adminDb, 'clientes', crossTenantLeadId), {
+      ...client(crossTenantLeadId, 'tenant-b'),
+      nomeFantasia: `Lead ${crossTenantLeadId}`,
+      leadOrigemId: crossTenantLeadId,
+    });
+  });
+  await assertFails(updateDoc(doc(sellerDb, 'leads', crossTenantLeadId), {
+    etapa: 'Convertido',
+    clienteConvertidoId: crossTenantLeadId,
+    convertidoEm: '2026-10-26T11:00:00.000Z',
+    atualizadoEm: '2026-10-26T11:00:00.000Z',
+  }));
 
   await assertFails(setDoc(doc(sellerDb, 'clientes', 'not-the-lead-id'), {
     ...client('not-the-lead-id', 'tenant-a'),
