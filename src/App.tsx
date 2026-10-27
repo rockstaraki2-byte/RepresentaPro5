@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { formatarMoeda, getUserPermissions } from './utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Representada, Cliente, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao } from './types';
+import { Representada, Cliente, Lead, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao } from './types';
 import {
   DEMO_EMPRESA_ID,
   DEMO_REPRESENTADAS,
@@ -44,6 +44,10 @@ import {
   getClientes,
   saveCliente,
   deleteCliente,
+  getLeads,
+  saveLead,
+  convertLeadToCliente,
+  LeadConversionError,
   getPedidos,
   savePedido,
   deletePedido,
@@ -64,6 +68,7 @@ import {
 import DashboardTab from './components/DashboardTab';
 import RepresentadasTab from './components/RepresentadasTab';
 import ClientesTab from './components/ClientesTab';
+import LeadsTab from './components/LeadsTab';
 import PedidosTab from './components/PedidosTab';
 import ProdutosTab from './components/ProdutosTab';
 import FinanceiroTab from './components/FinanceiroTab';
@@ -85,6 +90,7 @@ export default function App() {
   // resolves a verified UID-bound profile. Demo data is local and synthetic.
   const [representadas, setRepresentadas] = useState<Representada[]>(() => isDemoMode ? DEMO_REPRESENTADAS : []);
   const [clientes, setClientes] = useState<Cliente[]>(() => isDemoMode ? DEMO_CLIENTES : []);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>(() => isDemoMode ? DEMO_PEDIDOS : []);
   const [meta, setMeta] = useState<MetaVendas>(() => isDemoMode ? DEMO_METAS : { metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7) });
   const [produtos, setProdutos] = useState<Produto[]>(() => isDemoMode ? DEMO_PRODUTOS : []);
@@ -138,7 +144,7 @@ export default function App() {
   }, [isDemoMode]);
 
   // --- UI Navigation & Active States ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'representadas' | 'clientes' | 'pedidos' | 'produtos' | 'financeiro' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'representadas' | 'clientes' | 'leads' | 'pedidos' | 'produtos' | 'financeiro' | 'admin'>('dashboard');
   const [activePedidoToEdit, setActivePedidoToEdit] = useState<Pedido | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(!isDemoMode);
@@ -295,6 +301,7 @@ export default function App() {
     if (!authReady || !isAuthenticated || !currentUser) {
       setRepresentadas([]);
       setClientes([]);
+      setLeads([]);
       setPedidos([]);
       setProdutos([]);
       setEmpresas([]);
@@ -317,6 +324,7 @@ export default function App() {
     setLoading(true);
     setRepresentadas([]);
     setClientes([]);
+    setLeads([]);
     setPedidos([]);
     setProdutos([]);
     setEmpresas([]);
@@ -325,15 +333,17 @@ export default function App() {
     Promise.all([
       dataPermissions.verRepresentadas ? getRepresentadas(scope) : Promise.resolve([]),
       dataPermissions.verClientes ? getClientes(scope) : Promise.resolve([]),
+      dataPermissions.verLeads ? getLeads(scope, currentUser) : Promise.resolve([]),
       getPedidos(scope, currentUser),
       dataPermissions.verProdutos ? getProdutos(scope) : Promise.resolve([]),
       getEmpresas(scope),
       getUsuarios(scope, currentUser, canManageUsers),
       dataPermissions.verFinanceiro ? getMeta(scope) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
-    ]).then(([repData, cliData, pedData, prodData, empData, usrData, metaData]) => {
+    ]).then(([repData, cliData, leadData, pedData, prodData, empData, usrData, metaData]) => {
       if (cancelled) return;
       setRepresentadas(repData);
       setClientes(cliData);
+      setLeads(leadData);
       setPedidos(pedData);
       setProdutos(prodData);
       setEmpresas(empData);
@@ -423,6 +433,7 @@ export default function App() {
       isFirstSnapshot.current = false;
     }, currentUser);
     if (dataPermissions.verClientes) subscribe('clientes', (snapshot) => setClientes(snapshot.docs.map((item: any) => item.data() as Cliente)));
+    if (dataPermissions.verLeads) subscribe('leads', (snapshot) => setLeads(snapshot.docs.map((item: any) => item.data() as Lead)), currentUser);
     if (dataPermissions.verRepresentadas) subscribe('representadas', (snapshot) => setRepresentadas(snapshot.docs.map((item: any) => item.data() as Representada)));
     if (dataPermissions.verProdutos) subscribe('produtos', (snapshot) => setProdutos(snapshot.docs.map((item: any) => item.data() as Produto)));
     subscribe('empresas', (snapshot) => setEmpresas(snapshot.docs.map((item: any) => item.data() as EmpresaRepresentacao)));
@@ -449,6 +460,7 @@ export default function App() {
   const showAllData = systemAdmin && activeEmpresaId === 'all';
   const filteredRepresentadas = showAllData ? representadas : representadas.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
   const filteredClientes = showAllData ? clientes : clientes.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
+  const filteredLeads = showAllData ? leads : leads.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
   let baseFilteredPedidos = showAllData ? pedidos : pedidos.filter((item) => item.empresaRepresentacaoId === activeEmpresaId);
   if (!userPermissions.verTodasVendas && !showAllData && currentUser) {
     baseFilteredPedidos = baseFilteredPedidos.filter((item) => item.createdByUserId === currentUser.id || item.createdByUserId === currentUser.legacyId);
@@ -460,6 +472,7 @@ export default function App() {
     const allowed = activeTab === 'dashboard' ? userPermissions.verDashboard
       : activeTab === 'representadas' ? userPermissions.verRepresentadas
         : activeTab === 'clientes' ? userPermissions.verClientes
+        : activeTab === 'leads' ? userPermissions.verLeads
           : activeTab === 'produtos' ? userPermissions.verProdutos
             : activeTab === 'financeiro' ? currentUser?.role === 'Administrador' || userPermissions.verFinanceiro
               : activeTab === 'admin' ? currentUser?.role === 'Administrador'
@@ -468,11 +481,12 @@ export default function App() {
       const nextTab = userPermissions.verDashboard ? 'dashboard'
         : userPermissions.verRepresentadas ? 'representadas'
           : userPermissions.verClientes ? 'clientes'
+          : userPermissions.verLeads ? 'leads'
             : userPermissions.verProdutos ? 'produtos'
               : 'pedidos';
       setActiveTab(nextTab);
     }
-  }, [activeTab, currentUser?.role, userPermissions.verDashboard, userPermissions.verRepresentadas, userPermissions.verClientes, userPermissions.verProdutos, userPermissions.verFinanceiro]);
+  }, [activeTab, currentUser?.role, userPermissions.verDashboard, userPermissions.verRepresentadas, userPermissions.verClientes, userPermissions.verLeads, userPermissions.verProdutos, userPermissions.verFinanceiro]);
 
   const handleSelectEmpresa = (id: string) => {
     if (systemAdmin || isDemoMode) setActiveEmpresaId(id);
@@ -514,6 +528,108 @@ export default function App() {
   const handleDeleteCliente = async (id: string) => {
     setClientes(clientes.filter(c => c.id !== id));
     if (!isDemoMode) await deleteCliente(id);
+  };
+
+  const handleAddLead = (lead: Lead) => {
+    const tenantId = lead.empresaRepresentacaoId;
+    if (!tenantId || tenantId === 'all' || (!systemAdmin && tenantId !== currentUser?.empresaRepresentacaoId)) {
+      setErrorMessage('O lead precisa estar vinculado à empresa autorizada deste usuário.');
+      return;
+    }
+    const safeLead = { ...lead, empresaRepresentacaoId: tenantId };
+    setLeads((current) => [safeLead, ...current]);
+    if (!isDemoMode) {
+      void saveLead(safeLead).catch((error: any) => {
+        setLeads((current) => current.filter((item) => item.id !== safeLead.id));
+        console.error('Falha ao salvar lead:', error?.code || 'unknown');
+        setErrorMessage('Não foi possível salvar o lead. Verifique a conexão e as permissões da conta.');
+      });
+    }
+  };
+
+  const handleEditLead = (lead: Lead) => {
+    const existing = leads.find((item) => item.id === lead.id);
+    if (!existing || existing.empresaRepresentacaoId !== lead.empresaRepresentacaoId) {
+      setErrorMessage('Não foi possível validar o vínculo deste lead. Atualize os dados e tente novamente.');
+      return;
+    }
+    const safeLead = {
+      ...lead,
+      empresaRepresentacaoId: existing.empresaRepresentacaoId,
+      criadoPorUserId: existing.criadoPorUserId,
+      criadoEm: existing.criadoEm,
+      responsavelUserId: existing.responsavelUserId,
+    };
+    setLeads((current) => current.map((item) => item.id === safeLead.id ? safeLead : item));
+    if (!isDemoMode) {
+      void saveLead(safeLead).catch((error: any) => {
+        setLeads((current) => current.map((item) => item.id === safeLead.id && item.atualizadoEm === safeLead.atualizadoEm ? existing : item));
+        console.error('Falha ao atualizar lead:', error?.code || 'unknown');
+        setErrorMessage('Não foi possível atualizar o lead. Verifique a conexão e as permissões da conta.');
+      });
+    }
+  };
+
+  const handleConvertLead = async (convertedLead: Lead, cliente: Cliente) => {
+    const existing = leads.find((item) => item.id === convertedLead.id);
+    if (!userPermissions.editarLeads || !userPermissions.verClientes || !userPermissions.editarClientes
+      || !existing || existing.empresaRepresentacaoId !== convertedLead.empresaRepresentacaoId
+      || existing.etapa === 'Convertido' || existing.etapa === 'Perdido') {
+      setErrorMessage('Não foi possível converter o lead. Confira se o cliente já está cadastrado e tente novamente.');
+      return;
+    }
+
+    const linkedCliente = clientes.find((item) => item.id === existing.id
+      && item.leadOrigemId === existing.id
+      && item.empresaRepresentacaoId === existing.empresaRepresentacaoId);
+    const clienteConvertido: Cliente = {
+      ...cliente,
+      id: existing.id,
+      empresaRepresentacaoId: existing.empresaRepresentacaoId,
+      leadOrigemId: existing.id,
+    };
+    const cnpjDigits = clienteConvertido.cnpj.replace(/\D/g, '');
+    const duplicateCustomer = Boolean(cnpjDigits) && clientes.some((item) => item.id !== clienteConvertido.id
+      && item.empresaRepresentacaoId === clienteConvertido.empresaRepresentacaoId
+      && item.cnpj.replace(/\D/g, '') === cnpjDigits);
+    if (duplicateCustomer) {
+      setErrorMessage('Não foi possível converter o lead porque já existe outro cliente com este CNPJ nesta empresa.');
+      return;
+    }
+
+    const leadConvertidoSeguro: Lead = {
+      ...convertedLead,
+      id: existing.id,
+      empresaRepresentacaoId: existing.empresaRepresentacaoId,
+      responsavelUserId: existing.responsavelUserId,
+      criadoPorUserId: existing.criadoPorUserId,
+      criadoEm: existing.criadoEm,
+    };
+    setLeads((current) => current.map((item) => item.id === existing.id ? leadConvertidoSeguro : item));
+    setClientes((current) => current.some((item) => item.id === clienteConvertido.id)
+      ? current.map((item) => item.id === clienteConvertido.id ? clienteConvertido : item)
+      : [clienteConvertido, ...current]);
+    if (!isDemoMode) {
+      await convertLeadToCliente(leadConvertidoSeguro, clienteConvertido).catch((error: unknown) => {
+        const clientWasSaved = error instanceof LeadConversionError && error.clientSaved;
+        setLeads((current) => current.map((item) => item.id === existing.id && item.atualizadoEm === leadConvertidoSeguro.atualizadoEm ? existing : item));
+        setClientes((current) => {
+          if (clientWasSaved) {
+            return current.some((item) => item.id === clienteConvertido.id)
+              ? current.map((item) => item.id === clienteConvertido.id ? clienteConvertido : item)
+              : [clienteConvertido, ...current];
+          }
+          return linkedCliente
+            ? current.map((item) => item.id === linkedCliente.id ? linkedCliente : item)
+            : current.filter((item) => item.id !== clienteConvertido.id);
+        });
+        const errorCode = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
+        console.error('Falha ao converter lead em cliente:', errorCode);
+        setErrorMessage(clientWasSaved
+          ? 'O cliente foi salvo, mas o lead continua aberto. Tente converter novamente para concluir sem duplicar o cadastro.'
+          : 'A conversão não foi sincronizada. O lead foi preservado; confira a conexão e as permissões.');
+      });
+    }
   };
 
   // Pedidos
@@ -623,9 +739,10 @@ export default function App() {
       systemAdmin,
     };
     try {
-      const [repData, cliData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
+      const [repData, cliData, leadData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
         getUserPermissions(currentUser).verRepresentadas ? getRepresentadas(scope, true) : Promise.resolve([]),
         getUserPermissions(currentUser).verClientes ? getClientes(scope, true) : Promise.resolve([]),
+        getUserPermissions(currentUser).verLeads ? getLeads(scope, currentUser, true) : Promise.resolve([]),
         getPedidos(scope, currentUser, true),
         getUserPermissions(currentUser).verProdutos ? getProdutos(scope, true) : Promise.resolve([]),
         getEmpresas(scope, true),
@@ -634,6 +751,7 @@ export default function App() {
       ]);
       setRepresentadas(repData);
       setClientes(cliData);
+      setLeads(leadData);
       setPedidos(pedData);
       setProdutos(prodData);
       setEmpresas(empData);
@@ -977,6 +1095,21 @@ export default function App() {
             </button>
           )}
 
+          {userPermissions.verLeads && (
+            <button
+              id="tab-leads"
+              onClick={() => { setActiveTab('leads'); setActivePedidoToEdit(null); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'leads'
+                  ? 'bg-[#0B3259] text-white shadow-md ring-1 ring-[#FD9619]/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              <span>Prospecção</span>
+            </button>
+          )}
+
           {/* Tab: Produtos */}
           {userPermissions.verProdutos && (
             <button 
@@ -1088,6 +1221,23 @@ export default function App() {
                 />
               )}
 
+              {activeTab === 'leads' && userPermissions.verLeads && (
+                <LeadsTab
+                  leads={filteredLeads}
+                  clientes={filteredClientes}
+                  representadas={filteredRepresentadas}
+                  empresas={empresas}
+                  currentUser={currentUser}
+                  activeEmpresaId={activeEmpresaId}
+                  isSystemAdmin={systemAdmin}
+                  canEdit={userPermissions.editarLeads}
+                  canConvert={userPermissions.editarLeads && userPermissions.verClientes && userPermissions.editarClientes}
+                  onAdd={handleAddLead}
+                  onEdit={handleEditLead}
+                  onConvert={handleConvertLead}
+                />
+              )}
+
               {activeTab === 'produtos' && (
                 <ProdutosTab 
                   produtos={filteredProdutos}
@@ -1163,13 +1313,13 @@ export default function App() {
       </footer>
 
       {/* Bottom Tab Bar for Mobile & PWA */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200/85 px-2 py-2 flex justify-around items-center shadow-[0_-4px_12px_rgba(0,0,0,0.05)] sm:hidden">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200/85 px-2 py-2 flex justify-start gap-1 overflow-x-auto items-center shadow-[0_-4px_12px_rgba(0,0,0,0.05)] sm:hidden">
         
         {/* Mobile Tab 1: Painel */}
         {userPermissions.verDashboard && (
           <button
             onClick={() => { setActiveTab('dashboard'); setActivePedidoToEdit(null); }}
-            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
               activeTab === 'dashboard' ? 'text-emerald-600 scale-105' : 'text-slate-500'
             }`}
           >
@@ -1182,7 +1332,7 @@ export default function App() {
         {userPermissions.verRepresentadas && (
           <button
             onClick={() => { setActiveTab('representadas'); setActivePedidoToEdit(null); }}
-            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
               activeTab === 'representadas' ? 'text-emerald-600 scale-105' : 'text-slate-500'
             }`}
           >
@@ -1195,7 +1345,7 @@ export default function App() {
         {userPermissions.verClientes && (
           <button
             onClick={() => { setActiveTab('clientes'); setActivePedidoToEdit(null); }}
-            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
               activeTab === 'clientes' ? 'text-emerald-600 scale-105' : 'text-slate-500'
             }`}
           >
@@ -1204,11 +1354,24 @@ export default function App() {
           </button>
         )}
 
+        {userPermissions.verLeads && (
+          <button
+            onClick={() => { setActiveTab('leads'); setActivePedidoToEdit(null); }}
+            aria-label="Abrir CRM de prospecção"
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+              activeTab === 'leads' ? 'text-emerald-600 scale-105' : 'text-slate-500'
+            }`}
+          >
+            <Briefcase className="w-4 h-4" />
+            <span className="text-[8px] font-bold mt-0.5">Leads</span>
+          </button>
+        )}
+
         {/* Mobile Tab 4: Produtos */}
         {userPermissions.verProdutos && (
           <button
             onClick={() => { setActiveTab('produtos'); setActivePedidoToEdit(null); }}
-            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
               activeTab === 'produtos' ? 'text-emerald-600 scale-105' : 'text-slate-500'
             }`}
           >
@@ -1220,7 +1383,7 @@ export default function App() {
         {/* Mobile Tab 5: Pedidos */}
         <button
           onClick={() => { setActiveTab('pedidos'); }}
-          className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+          className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
             activeTab === 'pedidos' ? 'text-emerald-600 scale-105' : 'text-slate-500'
           }`}
         >
@@ -1232,7 +1395,7 @@ export default function App() {
         {(currentUser?.role === 'Administrador' || userPermissions.verFinanceiro) && (
           <button
             onClick={() => { setActiveTab('financeiro'); setActivePedidoToEdit(null); }}
-            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
               activeTab === 'financeiro' ? 'text-emerald-600 scale-105' : 'text-slate-500'
             }`}
           >
@@ -1245,7 +1408,7 @@ export default function App() {
         {(currentUser?.role === 'Administrador' || userPermissions.gerenciarUsuarios) && (
           <button
             onClick={() => { setActiveTab('admin'); }}
-            className={`flex flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
+            className={`flex shrink-0 flex-col items-center justify-center w-12 py-1 text-center transition-all cursor-pointer ${
               activeTab === 'admin' ? 'text-slate-800 scale-105' : 'text-slate-400'
             }`}
           >

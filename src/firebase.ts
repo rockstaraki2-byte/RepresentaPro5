@@ -28,6 +28,7 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import type {
   Representada,
   Cliente,
+  Lead,
   Pedido,
   Produto,
   EmpresaRepresentacao,
@@ -188,6 +189,10 @@ function canSeeAllOrders(user?: Usuario): boolean {
   return Boolean(user && (user.role === 'Administrador' || (user.permissoes?.verTodasVendas ?? user.role === 'Representante')));
 }
 
+function canSeeAllLeads(user?: Usuario): boolean {
+  return Boolean(user && (user.role === 'Administrador' || (user.permissoes?.verTodosLeads ?? user.role === 'Representante')));
+}
+
 export function scopedCollection(name: string, scope: TenantScope, owner?: Usuario): Query {
   requireTenant(scope);
   const base = collection(db, name);
@@ -198,6 +203,10 @@ export function scopedCollection(name: string, scope: TenantScope, owner?: Usuar
   if (name === 'pedidos' && !scope.systemAdmin && owner?.id && !canSeeAllOrders(owner)) {
     const userIds = Array.from(new Set([owner.id, owner.legacyId].filter((id): id is string => Boolean(id))));
     return query(scoped, where('createdByUserId', 'in', userIds));
+  }
+  if (name === 'leads' && !scope.systemAdmin && owner?.id && !canSeeAllLeads(owner)) {
+    const userIds = Array.from(new Set([owner.id, owner.legacyId].filter((id): id is string => Boolean(id))));
+    return query(scoped, where('responsavelUserId', 'in', userIds));
   }
   return scoped;
 }
@@ -332,6 +341,52 @@ export async function deleteCliente(id: string): Promise<void> {
     await deleteDoc(doc(db, 'clientes', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, 'clientes');
+  }
+}
+
+export async function getLeads(scope: TenantScope, user?: Usuario, forceServer = false): Promise<Lead[]> {
+  const scoped = scopedCollection('leads', scope, user);
+  try {
+    const snapshot = await readQuery(scoped, forceServer);
+    return snapshot.docs.map((item) => item.data() as Lead);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'leads');
+  }
+}
+
+export async function saveLead(lead: Lead): Promise<void> {
+  try {
+    await setDoc(doc(db, 'leads', lead.id), removeUndefinedFields(lead));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'leads');
+  }
+}
+
+export class LeadConversionError extends Error {
+  clientSaved: boolean;
+
+  constructor(message: string, clientSaved: boolean) {
+    super(message);
+    this.name = 'LeadConversionError';
+    this.clientSaved = clientSaved;
+  }
+}
+
+/** Creates a linked customer first, then finalizes the lead conversion. */
+export async function convertLeadToCliente(lead: Lead, cliente: Cliente): Promise<void> {
+  const linkedCliente = { ...cliente, leadOrigemId: lead.id };
+  try {
+    await setDoc(doc(db, 'clientes', linkedCliente.id), removeUndefinedFields(linkedCliente));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'clientes');
+  }
+
+  try {
+    await updateDoc(doc(db, 'leads', lead.id), removeUndefinedFields(lead));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('Lead conversion finalization failed', { operationType: OperationType.UPDATE, path: 'leads', message });
+    throw new LeadConversionError('O cliente foi salvo, mas o lead ainda não foi finalizado.', true);
   }
 }
 
