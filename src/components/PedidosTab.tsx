@@ -3,7 +3,6 @@ import { Pedido, Cliente, Representada, OrderItem, PedidoStatus, Produto } from 
 import { formatarMoeda, formatarData, calcularParcelas, formatarTipoFaturamento, formatUserNameClean } from '../utils';
 import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, ShoppingCart, Mail, Send, Printer, Loader2, Download, MessageCircle, ChevronDown, SlidersHorizontal, ChevronUp, Sparkles, Calendar, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { gerarPedidoPDF, gerarResumoMensalPDF, gerarResumoPeriodoPDF } from '../lib/pdfGenerator';
 import CatalogViewerModal from './CatalogViewerModal';
 import { getPdfFromIndexedDB } from '../lib/pdfStorage';
 
@@ -681,6 +680,7 @@ ${empresaNome}`;
       const rep = representadas.find(r => r.id === emailPedido.representadaId);
       
       // Generate the PDF without saving/downloading in browser
+      const { gerarPedidoPDF } = await import('../lib/pdfGenerator');
       const doc = gerarPedidoPDF(getPedidoWithPhotos(emailPedido), cli, rep, empresaRepresentacao, true);
       const blob = doc.output('blob');
       
@@ -1646,8 +1646,9 @@ ${empresaNome}`;
           <div className="flex items-center gap-2">
             {/* Botão de Exportar Relatório PDF Mensal */}
             <button
-              onClick={() => {
+              onClick={async () => {
                 const currentAnoMes = new Date().toISOString().slice(0, 7);
+                const { gerarResumoMensalPDF } = await import('../lib/pdfGenerator');
                 gerarResumoMensalPDF(pedidos, clientes, representadas, currentAnoMes, empresaRepresentacao);
               }}
               className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
@@ -1798,7 +1799,8 @@ ${empresaNome}`;
 
                     {/* Botão Exportar PDF */}
                     <button
-                      onClick={() => {
+                      onClick={async () => {
+                        const { gerarResumoPeriodoPDF } = await import('../lib/pdfGenerator');
                         gerarResumoPeriodoPDF(pedidosFiltrados, clientes, representadas, filterDataDe, filterDataAte, empresaRepresentacao);
                       }}
                       disabled={pedidosFiltrados.length === 0}
@@ -1888,9 +1890,10 @@ ${empresaNome}`;
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button 
-                          onClick={() => {
+                          onClick={async () => {
                             const cli = clientes.find(c => c.id === p.clienteId);
                             const rep = representadas.find(r => r.id === p.representadaId);
+                            const { gerarPedidoPDF } = await import('../lib/pdfGenerator');
                             gerarPedidoPDF(getPedidoWithPhotos(p), cli, rep, empresaRepresentacao);
                           }}
                           className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-50 rounded transition-colors cursor-pointer"

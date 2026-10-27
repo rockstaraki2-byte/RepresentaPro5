@@ -22,7 +22,6 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { gerarDashboardPDF } from '../lib/pdfGenerator';
 import { 
   ResponsiveContainer, 
   BarChart, 
@@ -218,7 +217,8 @@ export default function DashboardTab({
             )}
             {/* Print Dashboard PDF Button */}
             <button
-              onClick={() => {
+              onClick={async () => {
+                const { gerarDashboardPDF } = await import('../lib/pdfGenerator');
                 gerarDashboardPDF(pedidos, clientes, representadas, {
                   representadaId: filterRepresentada,
                   clienteId: filterCliente,

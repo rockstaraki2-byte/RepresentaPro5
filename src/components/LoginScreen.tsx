@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { Lock, User, AlertCircle, ChevronRight, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
-import { auth } from '../firebase';
+import { auth } from '../firebase-app';
 
 interface LoginScreenProps {
   initialError?: string | null;

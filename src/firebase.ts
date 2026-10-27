@@ -1,5 +1,3 @@
-import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import {
   collection,
@@ -35,22 +33,9 @@ import type {
   Usuario,
   MetaVendas,
 } from './types';
+import { app, auth, isSystemAdminAccount } from './firebase-app';
 
-// Firebase web configuration is public by design. Restrict this key to the
-// production domains in Google Cloud; it is not an authorization mechanism.
-const firebaseConfig = {
-  apiKey: 'AIzaSyBF2sweJQHuc_I3S71dPjw0_5pEUQOzuu8',
-  authDomain: 'representapro-b84c3.firebaseapp.com',
-  projectId: 'representapro-b84c3',
-  storageBucket: 'representapro-b84c3.firebasestorage.app',
-  messagingSenderId: '948207221757',
-  appId: '1:948207221757:web:be1da69bbe4490076af794',
-  measurementId: 'G-K4P1RYCKW5',
-};
-
-export const SYSTEM_ADMIN_EMAIL = 'rockstaraki2@gmail.com';
-export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export { app, auth, SYSTEM_ADMIN_EMAIL, isSystemAdminAccount } from './firebase-app';
 
 // Persistent cache supports offline visits on a representative's trusted device.
 // Server requests remain protected by Firestore rules; cached data is cleared
@@ -138,7 +123,6 @@ if (typeof window !== 'undefined' && appCheckSiteKey) {
 }
 
 if (import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }
 
@@ -173,10 +157,6 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   // Never include document contents, credentials, or email addresses in logs.
   console.error('Firestore operation failed', { operationType, path, message });
   throw new Error(message);
-}
-
-export function isSystemAdminAccount(user: FirebaseUser | null | undefined): boolean {
-  return Boolean(user?.emailVerified && user.email?.toLowerCase() === SYSTEM_ADMIN_EMAIL);
 }
 
 function requireTenant(scope: TenantScope): void {

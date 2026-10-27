@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { onSnapshot } from 'firebase/firestore';
 import {
   LayoutDashboard,
   Briefcase,
@@ -21,6 +20,8 @@ import {
 import { formatarMoeda, getUserPermissions } from './utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Representada, Cliente, Lead, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao } from './types';
+import { auth, isSystemAdminAccount } from './firebase-app';
+import type { TenantScope } from './firebase';
 import {
   DEMO_EMPRESA_ID,
   DEMO_REPRESENTADAS,
@@ -32,48 +33,28 @@ import {
   DEMO_USUARIOS,
   DEMO_NOTIFICACOES,
 } from './data';
-import {
-  auth,
-  resolveUserProfile,
-  isSystemAdminAccount,
-  scopedCollection,
-  TenantScope,
-  getRepresentadas,
-  saveRepresentada,
-  deleteRepresentada,
-  getClientes,
-  saveCliente,
-  deleteCliente,
-  getLeads,
-  saveLead,
-  convertLeadToCliente,
-  LeadConversionError,
-  getPedidos,
-  savePedido,
-  deletePedido,
-  getProdutos,
-  saveProduto,
-  deleteProduto,
-  getEmpresas,
-  saveEmpresa,
-  deleteEmpresa,
-  getUsuarios,
-  saveUsuario,
-  deleteUsuario,
-  getMeta,
-  saveMeta,
-  clearOfflineFirestoreCache,
-  waitForOfflineWritesToSync,
-} from './firebase';
-import DashboardTab from './components/DashboardTab';
-import RepresentadasTab from './components/RepresentadasTab';
-import ClientesTab from './components/ClientesTab';
-import LeadsTab from './components/LeadsTab';
-import PedidosTab from './components/PedidosTab';
-import ProdutosTab from './components/ProdutosTab';
-import FinanceiroTab from './components/FinanceiroTab';
-import AdminTab from './components/AdminTab';
-import LoginScreen from './components/LoginScreen';
+const DashboardTab = lazy(() => import('./components/DashboardTab'));
+const RepresentadasTab = lazy(() => import('./components/RepresentadasTab'));
+const ClientesTab = lazy(() => import('./components/ClientesTab'));
+const LeadsTab = lazy(() => import('./components/LeadsTab'));
+const PedidosTab = lazy(() => import('./components/PedidosTab'));
+const ProdutosTab = lazy(() => import('./components/ProdutosTab'));
+const FinanceiroTab = lazy(() => import('./components/FinanceiroTab'));
+const AdminTab = lazy(() => import('./components/AdminTab'));
+const LoginScreen = lazy(() => import('./components/LoginScreen'));
+
+type FirebaseServices = typeof import('./firebase');
+let firebaseServicesPromise: Promise<FirebaseServices> | undefined;
+
+function loadFirebaseServices(): Promise<FirebaseServices> {
+  if (!firebaseServicesPromise) {
+    firebaseServicesPromise = import('./firebase').catch((error) => {
+      firebaseServicesPromise = undefined;
+      throw error;
+    });
+  }
+  return firebaseServicesPromise;
+}
 
 function isTemporaryConnectionError(error: any): boolean {
   const details = `${error?.code || ''} ${error?.message || error || ''}`;
@@ -234,7 +215,8 @@ export default function App() {
       const currentAttempt = ++attemptId;
       setLoading(true);
       try {
-        const profile = await resolveUserProfile(firebaseUser);
+        const firebaseServices = await loadFirebaseServices();
+        const profile = await firebaseServices.resolveUserProfile(firebaseUser);
         if (!profile.ativo) throw new Error('Este usuário foi desativado. Fale com o administrador da empresa.');
         if (currentAttempt !== attemptId) return;
         setCurrentUser(profile);
@@ -330,16 +312,16 @@ export default function App() {
     setEmpresas([]);
     setUsuarios([currentUser]);
 
-    Promise.all([
-      dataPermissions.verRepresentadas ? getRepresentadas(scope) : Promise.resolve([]),
-      dataPermissions.verClientes ? getClientes(scope) : Promise.resolve([]),
-      dataPermissions.verLeads ? getLeads(scope, currentUser) : Promise.resolve([]),
-      getPedidos(scope, currentUser),
-      dataPermissions.verProdutos ? getProdutos(scope) : Promise.resolve([]),
-      getEmpresas(scope),
-      getUsuarios(scope, currentUser, canManageUsers),
-      dataPermissions.verFinanceiro ? getMeta(scope) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
-    ]).then(([repData, cliData, leadData, pedData, prodData, empData, usrData, metaData]) => {
+    loadFirebaseServices().then((firebaseServices) => Promise.all([
+      dataPermissions.verRepresentadas ? firebaseServices.getRepresentadas(scope) : Promise.resolve([]),
+      dataPermissions.verClientes ? firebaseServices.getClientes(scope) : Promise.resolve([]),
+      dataPermissions.verLeads ? firebaseServices.getLeads(scope, currentUser) : Promise.resolve([]),
+      firebaseServices.getPedidos(scope, currentUser),
+      dataPermissions.verProdutos ? firebaseServices.getProdutos(scope) : Promise.resolve([]),
+      firebaseServices.getEmpresas(scope),
+      firebaseServices.getUsuarios(scope, currentUser, canManageUsers),
+      dataPermissions.verFinanceiro ? firebaseServices.getMeta(scope) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
+    ])).then(([repData, cliData, leadData, pedData, prodData, empData, usrData, metaData]) => {
       if (cancelled) return;
       setRepresentadas(repData);
       setClientes(cliData);
@@ -390,67 +372,76 @@ export default function App() {
     setIsUsingCachedData(false);
     setHasPendingSync(false);
     const subscriptions: Array<() => void> = [];
-    const subscribe = (name: string, handler: (snapshot: any) => void, owner?: Usuario) => {
-      subscriptions.push(onSnapshot(
-        scopedCollection(name, scope, owner),
-        { includeMetadataChanges: true },
-        (snapshot) => {
-          snapshotSyncState.current[name] = {
-            fromCache: snapshot.metadata.fromCache,
-            hasPendingWrites: snapshot.metadata.hasPendingWrites,
-          };
-          const statuses = Object.values(snapshotSyncState.current) as Array<{ fromCache: boolean; hasPendingWrites: boolean }>;
-          setIsUsingCachedData(statuses.some((status) => status.fromCache));
-          setHasPendingSync(statuses.some((status) => status.hasPendingWrites));
-          handler(snapshot);
-        },
-        (error) => {
-          console.warn(`Atualização protegida indisponível: ${name}`, error.code);
-        },
-      ));
-    };
+    let cancelled = false;
+    void Promise.all([loadFirebaseServices(), import('firebase/firestore')]).then(([firebaseServices, { onSnapshot }]) => {
+      if (cancelled) return;
+      const subscribe = (name: string, handler: (snapshot: any) => void, owner?: Usuario) => {
+        subscriptions.push(onSnapshot(
+          firebaseServices.scopedCollection(name, scope, owner),
+          { includeMetadataChanges: true },
+          (snapshot) => {
+            snapshotSyncState.current[name] = {
+              fromCache: snapshot.metadata.fromCache,
+              hasPendingWrites: snapshot.metadata.hasPendingWrites,
+            };
+            const statuses = Object.values(snapshotSyncState.current) as Array<{ fromCache: boolean; hasPendingWrites: boolean }>;
+            setIsUsingCachedData(statuses.some((status) => status.fromCache));
+            setHasPendingSync(statuses.some((status) => status.hasPendingWrites));
+            handler(snapshot);
+          },
+          (error) => {
+            console.warn(`Atualização protegida indisponível: ${name}`, error.code);
+          },
+        ));
+      };
 
-    subscribe('pedidos', (snapshot) => {
-      const list = snapshot.docs.map((item: any) => item.data() as Pedido);
-      if (!isFirstSnapshot.current) {
-        snapshot.docChanges().forEach((change: any) => {
-          const data = change.doc.data() as Pedido;
-          if (data.empresaRepresentacaoId !== activeEmpresaIdRef.current && activeEmpresaIdRef.current !== 'all') return;
-          if (change.type === 'added') {
-            const repName = representadasRef.current.find((r) => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
-            const cliName = clientesRef.current.find((c) => c.id === data.clienteId)?.nomeFantasia || 'Cliente';
-            triggerAppNotification('Novo Pedido de Venda 📦', `Pedido nº ${data.numeroPedido} (${cliName} ➔ ${repName}) no valor de ${formatarMoeda(data.valorTotal)} foi inserido no sistema.`, 'order');
-          } else if (change.type === 'modified') {
-            const previous = pedidosRef.current.find((item) => item.id === data.id);
-            if (data.statusComissao === 'Liberada' && previous?.statusComissao !== 'Liberada') {
+      subscribe('pedidos', (snapshot) => {
+        const list = snapshot.docs.map((item: any) => item.data() as Pedido);
+        if (!isFirstSnapshot.current) {
+          snapshot.docChanges().forEach((change: any) => {
+            const data = change.doc.data() as Pedido;
+            if (data.empresaRepresentacaoId !== activeEmpresaIdRef.current && activeEmpresaIdRef.current !== 'all') return;
+            if (change.type === 'added') {
               const repName = representadasRef.current.find((r) => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
-              triggerAppNotification('Comissão Liberada! 💸', `A comissão de ${formatarMoeda(data.valorComissao)} do pedido nº ${data.numeroPedido} (${repName}) foi liberada pelo administrador.`, 'commission');
+              const cliName = clientesRef.current.find((c) => c.id === data.clienteId)?.nomeFantasia || 'Cliente';
+              triggerAppNotification('Novo Pedido de Venda 📦', `Pedido nº ${data.numeroPedido} (${cliName} ➔ ${repName}) no valor de ${formatarMoeda(data.valorTotal)} foi inserido no sistema.`, 'order');
+            } else if (change.type === 'modified') {
+              const previous = pedidosRef.current.find((item) => item.id === data.id);
+              if (data.statusComissao === 'Liberada' && previous?.statusComissao !== 'Liberada') {
+                const repName = representadasRef.current.find((r) => r.id === data.representadaId)?.nomeFantasia || 'Fábrica';
+                triggerAppNotification('Comissão Liberada! 💸', `A comissão de ${formatarMoeda(data.valorComissao)} do pedido nº ${data.numeroPedido} (${repName}) foi liberada pelo administrador.`, 'commission');
+              }
             }
-          }
+          });
+        }
+        setPedidos(list);
+        isFirstSnapshot.current = false;
+      }, currentUser);
+      if (dataPermissions.verClientes) subscribe('clientes', (snapshot) => setClientes(snapshot.docs.map((item: any) => item.data() as Cliente)));
+      if (dataPermissions.verLeads) subscribe('leads', (snapshot) => setLeads(snapshot.docs.map((item: any) => item.data() as Lead)), currentUser);
+      if (dataPermissions.verRepresentadas) subscribe('representadas', (snapshot) => setRepresentadas(snapshot.docs.map((item: any) => item.data() as Representada)));
+      if (dataPermissions.verProdutos) subscribe('produtos', (snapshot) => setProdutos(snapshot.docs.map((item: any) => item.data() as Produto)));
+      subscribe('empresas', (snapshot) => setEmpresas(snapshot.docs.map((item: any) => item.data() as EmpresaRepresentacao)));
+      if (canManageUsers) {
+        subscribe('usuarios', (snapshot) => {
+          const profiles = snapshot.docs.map((item: any) => { const { senha: _password, gmailUser: _gmailUser, gmailAppPass: _gmailPass, ...safe } = item.data(); return { ...safe, id: item.id } as Usuario; });
+          setUsuarios(Array.from(new Map([currentUser, ...profiles].map((profile) => [profile.id, profile])).values()));
         });
       }
-      setPedidos(list);
-      isFirstSnapshot.current = false;
-    }, currentUser);
-    if (dataPermissions.verClientes) subscribe('clientes', (snapshot) => setClientes(snapshot.docs.map((item: any) => item.data() as Cliente)));
-    if (dataPermissions.verLeads) subscribe('leads', (snapshot) => setLeads(snapshot.docs.map((item: any) => item.data() as Lead)), currentUser);
-    if (dataPermissions.verRepresentadas) subscribe('representadas', (snapshot) => setRepresentadas(snapshot.docs.map((item: any) => item.data() as Representada)));
-    if (dataPermissions.verProdutos) subscribe('produtos', (snapshot) => setProdutos(snapshot.docs.map((item: any) => item.data() as Produto)));
-    subscribe('empresas', (snapshot) => setEmpresas(snapshot.docs.map((item: any) => item.data() as EmpresaRepresentacao)));
-    if (canManageUsers) {
-      subscribe('usuarios', (snapshot) => {
-        const profiles = snapshot.docs.map((item: any) => { const { senha: _password, gmailUser: _gmailUser, gmailAppPass: _gmailPass, ...safe } = item.data(); return { ...safe, id: item.id } as Usuario; });
-        setUsuarios(Array.from(new Map([currentUser, ...profiles].map((profile) => [profile.id, profile])).values()));
-      });
-    }
-    if (dataPermissions.verFinanceiro) {
-      subscribe('meta', (snapshot) => {
-        const matching = scope.tenantId === 'all' ? snapshot.docs[0] : snapshot.docs.find((item: any) => item.data().empresaRepresentacaoId === scope.tenantId);
-        if (matching) setMeta(matching.data() as MetaVendas);
-      });
-    }
+      if (dataPermissions.verFinanceiro) {
+        subscribe('meta', (snapshot) => {
+          const matching = scope.tenantId === 'all' ? snapshot.docs[0] : snapshot.docs.find((item: any) => item.data().empresaRepresentacaoId === scope.tenantId);
+          if (matching) setMeta(matching.data() as MetaVendas);
+        });
+      }
+    }).catch((error: any) => {
+      if (!cancelled) console.warn('Não foi possível iniciar as atualizações em tempo real.', error?.code || 'unknown');
+    });
 
-    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+    return () => {
+      cancelled = true;
+      subscriptions.forEach((unsubscribe) => unsubscribe());
+    };
   }, [isDemoMode, authReady, isAuthenticated, currentUser?.id, activeEmpresaId, systemAdmin, canManageUsers, loading]);
 
   // --- Active selections and UI presentation filters ---
@@ -499,17 +490,17 @@ export default function App() {
     const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
     const withEmp = { ...rep, empresaRepresentacaoId: targetEmpId };
     setRepresentadas([...representadas, withEmp]);
-    if (!isDemoMode) await saveRepresentada(withEmp);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveRepresentada(withEmp);
   };
   const handleEditRepresentada = async (rep: Representada) => {
     const existing = representadas.find(r => r.id === rep.id);
     const updated = { ...existing, ...rep, empresaRepresentacaoId: existing?.empresaRepresentacaoId || (systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId)) };
     setRepresentadas(representadas.map(r => r.id === rep.id ? updated : r));
-    if (!isDemoMode) await saveRepresentada(updated);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveRepresentada(updated);
   };
   const handleDeleteRepresentada = async (id: string) => {
     setRepresentadas(representadas.filter(r => r.id !== id));
-    if (!isDemoMode) await deleteRepresentada(id);
+    if (!isDemoMode) await (await loadFirebaseServices()).deleteRepresentada(id);
   };
 
   // Clientes
@@ -517,17 +508,17 @@ export default function App() {
     const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
     const withEmp = { ...cli, empresaRepresentacaoId: targetEmpId };
     setClientes([...clientes, withEmp]);
-    if (!isDemoMode) await saveCliente(withEmp);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveCliente(withEmp);
   };
   const handleEditCliente = async (cli: Cliente) => {
     const existing = clientes.find(c => c.id === cli.id);
     const updated = { ...existing, ...cli, empresaRepresentacaoId: existing?.empresaRepresentacaoId || (systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId)) };
     setClientes(clientes.map(c => c.id === cli.id ? updated : c));
-    if (!isDemoMode) await saveCliente(updated);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveCliente(updated);
   };
   const handleDeleteCliente = async (id: string) => {
     setClientes(clientes.filter(c => c.id !== id));
-    if (!isDemoMode) await deleteCliente(id);
+    if (!isDemoMode) await (await loadFirebaseServices()).deleteCliente(id);
   };
 
   const handleAddLead = (lead: Lead) => {
@@ -539,7 +530,7 @@ export default function App() {
     const safeLead = { ...lead, empresaRepresentacaoId: tenantId };
     setLeads((current) => [safeLead, ...current]);
     if (!isDemoMode) {
-      void saveLead(safeLead).catch((error: any) => {
+      void loadFirebaseServices().then((firebaseServices) => firebaseServices.saveLead(safeLead)).catch((error: any) => {
         setLeads((current) => current.filter((item) => item.id !== safeLead.id));
         console.error('Falha ao salvar lead:', error?.code || 'unknown');
         setErrorMessage('Não foi possível salvar o lead. Verifique a conexão e as permissões da conta.');
@@ -562,7 +553,7 @@ export default function App() {
     };
     setLeads((current) => current.map((item) => item.id === safeLead.id ? safeLead : item));
     if (!isDemoMode) {
-      void saveLead(safeLead).catch((error: any) => {
+      void loadFirebaseServices().then((firebaseServices) => firebaseServices.saveLead(safeLead)).catch((error: any) => {
         setLeads((current) => current.map((item) => item.id === safeLead.id && item.atualizadoEm === safeLead.atualizadoEm ? existing : item));
         console.error('Falha ao atualizar lead:', error?.code || 'unknown');
         setErrorMessage('Não foi possível atualizar o lead. Verifique a conexão e as permissões da conta.');
@@ -610,8 +601,9 @@ export default function App() {
       ? current.map((item) => item.id === clienteConvertido.id ? clienteConvertido : item)
       : [clienteConvertido, ...current]);
     if (!isDemoMode) {
-      await convertLeadToCliente(leadConvertidoSeguro, clienteConvertido).catch((error: unknown) => {
-        const clientWasSaved = error instanceof LeadConversionError && error.clientSaved;
+      const firebaseServices = await loadFirebaseServices();
+      await firebaseServices.convertLeadToCliente(leadConvertidoSeguro, clienteConvertido).catch((error: unknown) => {
+        const clientWasSaved = error instanceof firebaseServices.LeadConversionError && error.clientSaved;
         setLeads((current) => current.map((item) => item.id === existing.id && item.atualizadoEm === leadConvertidoSeguro.atualizadoEm ? existing : item));
         setClientes((current) => {
           if (clientWasSaved) {
@@ -637,7 +629,7 @@ export default function App() {
     const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
     const withEmp = { ...pedido, empresaRepresentacaoId: targetEmpId, createdByUserId: auth.currentUser?.uid };
     setPedidos([withEmp, ...pedidos]);
-    if (!isDemoMode) await savePedido(withEmp);
+    if (!isDemoMode) await (await loadFirebaseServices()).savePedido(withEmp);
   };
   const handleEditPedido = async (pedido: Pedido) => {
     const existing = pedidos.find(p => p.id === pedido.id);
@@ -646,11 +638,11 @@ export default function App() {
       updated.createdByUserId = auth.currentUser?.uid;
     }
     setPedidos(pedidos.map(p => p.id === pedido.id ? updated : p));
-    if (!isDemoMode) await savePedido(updated);
+    if (!isDemoMode) await (await loadFirebaseServices()).savePedido(updated);
   };
   const handleDeletePedido = async (id: string) => {
     setPedidos(pedidos.filter(p => p.id !== id));
-    if (!isDemoMode) await deletePedido(id);
+    if (!isDemoMode) await (await loadFirebaseServices()).deletePedido(id);
   };
 
   // Produtos
@@ -658,17 +650,17 @@ export default function App() {
     const targetEmpId = systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId);
     const withEmp = { ...prod, empresaRepresentacaoId: targetEmpId };
     setProdutos([...produtos, withEmp]);
-    if (!isDemoMode) await saveProduto(withEmp);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveProduto(withEmp);
   };
   const handleEditProduto = async (prod: Produto) => {
     const existing = produtos.find(p => p.id === prod.id);
     const updated = { ...existing, ...prod, empresaRepresentacaoId: existing?.empresaRepresentacaoId || (systemAdmin && activeEmpresaId === 'all' ? (empresas[0]?.id || '') : (currentUser?.empresaRepresentacaoId || activeEmpresaId)) };
     setProdutos(produtos.map(p => p.id === prod.id ? updated : p));
-    if (!isDemoMode) await saveProduto(updated);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveProduto(updated);
   };
   const handleDeleteProduto = async (id: string) => {
     setProdutos(produtos.filter(p => p.id !== id));
-    if (!isDemoMode) await deleteProduto(id);
+    if (!isDemoMode) await (await loadFirebaseServices()).deleteProduto(id);
   };
 
   // Empresas de Representação (Razões Sociais)
@@ -679,7 +671,7 @@ export default function App() {
       return;
     }
     setEmpresas([...empresas, emp]);
-    if (!isDemoMode) await saveEmpresa(emp);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveEmpresa(emp);
   };
   const handleEditEmpresa = async (emp: EmpresaRepresentacao) => {
     const isRaulUser = systemAdmin || isDemoMode;
@@ -688,7 +680,7 @@ export default function App() {
       return;
     }
     setEmpresas(empresas.map(e => e.id === emp.id ? emp : e));
-    if (!isDemoMode) await saveEmpresa(emp);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveEmpresa(emp);
   };
   const handleDeleteEmpresa = async (id: string) => {
     const isRaulUser = systemAdmin || isDemoMode;
@@ -697,26 +689,26 @@ export default function App() {
       return;
     }
     setEmpresas(empresas.filter(e => e.id !== id));
-    if (!isDemoMode) await deleteEmpresa(id);
+    if (!isDemoMode) await (await loadFirebaseServices()).deleteEmpresa(id);
   };
 
   // Usuários do Sistema
   const handleAddUsuario = async (usr: Usuario) => {
     setUsuarios([...usuarios, usr]);
-    if (!isDemoMode) await saveUsuario(usr);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveUsuario(usr);
   };
   const handleEditUsuario = async (usr: Usuario) => {
     setUsuarios(usuarios.map(u => u.id === usr.id ? usr : u));
-    if (!isDemoMode) await saveUsuario(usr);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveUsuario(usr);
   };
   const handleDeleteUsuario = async (id: string) => {
     setUsuarios(usuarios.filter(u => u.id !== id));
-    if (!isDemoMode) await deleteUsuario(id);
+    if (!isDemoMode) await (await loadFirebaseServices()).deleteUsuario(id);
   };
 
   const handleSetMeta = async (newMeta: MetaVendas) => {
     setMeta(newMeta);
-    if (!isDemoMode) await saveMeta(newMeta);
+    if (!isDemoMode) await (await loadFirebaseServices()).saveMeta(newMeta);
   };
 
   // Transition helper from dashboard view link
@@ -739,15 +731,16 @@ export default function App() {
       systemAdmin,
     };
     try {
+      const firebaseServices = await loadFirebaseServices();
       const [repData, cliData, leadData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
-        getUserPermissions(currentUser).verRepresentadas ? getRepresentadas(scope, true) : Promise.resolve([]),
-        getUserPermissions(currentUser).verClientes ? getClientes(scope, true) : Promise.resolve([]),
-        getUserPermissions(currentUser).verLeads ? getLeads(scope, currentUser, true) : Promise.resolve([]),
-        getPedidos(scope, currentUser, true),
-        getUserPermissions(currentUser).verProdutos ? getProdutos(scope, true) : Promise.resolve([]),
-        getEmpresas(scope, true),
-        getUsuarios(scope, currentUser, canManageUsers, true),
-        getUserPermissions(currentUser).verFinanceiro ? getMeta(scope, true) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
+        getUserPermissions(currentUser).verRepresentadas ? firebaseServices.getRepresentadas(scope, true) : Promise.resolve([]),
+        getUserPermissions(currentUser).verClientes ? firebaseServices.getClientes(scope, true) : Promise.resolve([]),
+        getUserPermissions(currentUser).verLeads ? firebaseServices.getLeads(scope, currentUser, true) : Promise.resolve([]),
+        firebaseServices.getPedidos(scope, currentUser, true),
+        getUserPermissions(currentUser).verProdutos ? firebaseServices.getProdutos(scope, true) : Promise.resolve([]),
+        firebaseServices.getEmpresas(scope, true),
+        firebaseServices.getUsuarios(scope, currentUser, canManageUsers, true),
+        getUserPermissions(currentUser).verFinanceiro ? firebaseServices.getMeta(scope, true) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
       ]);
       setRepresentadas(repData);
       setClientes(cliData);
@@ -778,8 +771,9 @@ export default function App() {
 
     let timeoutId: number | undefined;
     try {
+      const firebaseServices = await loadFirebaseServices();
       await Promise.race([
-        waitForOfflineWritesToSync(),
+        firebaseServices.waitForOfflineWritesToSync(),
         new Promise<never>((_, reject) => {
           timeoutId = window.setTimeout(() => reject(new Error('A sincronização ainda está pendente.')), 10000);
         }),
@@ -794,7 +788,8 @@ export default function App() {
     }
 
     try {
-      await clearOfflineFirestoreCache();
+      const firebaseServices = await loadFirebaseServices();
+      await firebaseServices.clearOfflineFirestoreCache();
     } catch {
       alert('Não consegui apagar a cópia offline com segurança. Feche as outras abas do RepresentaPRO e tente sair novamente.');
       window.location.reload();
@@ -822,7 +817,9 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <LoginScreen initialError={sessionError} />
+      <Suspense fallback={<div className="min-h-screen bg-[#071F38] flex items-center justify-center text-sm text-slate-300">Carregando...</div>}>
+        <LoginScreen initialError={sessionError} />
+      </Suspense>
     );
   }
 
@@ -1184,115 +1181,117 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'dashboard' && (
-                <DashboardTab 
-                  pedidos={filteredPedidos}
-                  clientes={filteredClientes}
-                  representadas={filteredRepresentadas}
-                  meta={meta}
-                  setMeta={handleSetMeta}
-                  onNavigateToTab={setActiveTab}
-                  onEditPedido={handleViewAndEditPedido}
-                  empresaRepresentacao={activeEmpresa}
-                  currentUser={currentUser}
-                />
-              )}
+              <Suspense fallback={<div className="min-h-[450px] flex items-center justify-center text-sm text-slate-500">Carregando tela...</div>}>
+                {activeTab === 'dashboard' && (
+                  <DashboardTab
+                    pedidos={filteredPedidos}
+                    clientes={filteredClientes}
+                    representadas={filteredRepresentadas}
+                    meta={meta}
+                    setMeta={handleSetMeta}
+                    onNavigateToTab={setActiveTab}
+                    onEditPedido={handleViewAndEditPedido}
+                    empresaRepresentacao={activeEmpresa}
+                    currentUser={currentUser}
+                  />
+                )}
 
-              {activeTab === 'representadas' && (
-                <RepresentadasTab 
-                  representadas={filteredRepresentadas}
-                  pedidos={filteredPedidos}
-                  onAdd={handleAddRepresentada}
-                  onEdit={handleEditRepresentada}
-                  onDelete={handleDeleteRepresentada}
-                  currentUser={currentUser}
-                />
-              )}
+                {activeTab === 'representadas' && (
+                  <RepresentadasTab
+                    representadas={filteredRepresentadas}
+                    pedidos={filteredPedidos}
+                    onAdd={handleAddRepresentada}
+                    onEdit={handleEditRepresentada}
+                    onDelete={handleDeleteRepresentada}
+                    currentUser={currentUser}
+                  />
+                )}
 
-              {activeTab === 'clientes' && (
-                <ClientesTab 
-                  clientes={filteredClientes}
-                  pedidos={filteredPedidos}
-                  representadas={filteredRepresentadas}
-                  onAdd={handleAddCliente}
-                  onEdit={handleEditCliente}
-                  onDelete={handleDeleteCliente}
-                  currentUser={currentUser}
-                />
-              )}
+                {activeTab === 'clientes' && (
+                  <ClientesTab
+                    clientes={filteredClientes}
+                    pedidos={filteredPedidos}
+                    representadas={filteredRepresentadas}
+                    onAdd={handleAddCliente}
+                    onEdit={handleEditCliente}
+                    onDelete={handleDeleteCliente}
+                    currentUser={currentUser}
+                  />
+                )}
 
-              {activeTab === 'leads' && userPermissions.verLeads && (
-                <LeadsTab
-                  leads={filteredLeads}
-                  clientes={filteredClientes}
-                  representadas={filteredRepresentadas}
-                  empresas={empresas}
-                  currentUser={currentUser}
-                  activeEmpresaId={activeEmpresaId}
-                  isSystemAdmin={systemAdmin}
-                  canEdit={userPermissions.editarLeads}
-                  canConvert={userPermissions.editarLeads && userPermissions.verClientes && userPermissions.editarClientes}
-                  onAdd={handleAddLead}
-                  onEdit={handleEditLead}
-                  onConvert={handleConvertLead}
-                />
-              )}
+                {activeTab === 'leads' && userPermissions.verLeads && (
+                  <LeadsTab
+                    leads={filteredLeads}
+                    clientes={filteredClientes}
+                    representadas={filteredRepresentadas}
+                    empresas={empresas}
+                    currentUser={currentUser}
+                    activeEmpresaId={activeEmpresaId}
+                    isSystemAdmin={systemAdmin}
+                    canEdit={userPermissions.editarLeads}
+                    canConvert={userPermissions.editarLeads && userPermissions.verClientes && userPermissions.editarClientes}
+                    onAdd={handleAddLead}
+                    onEdit={handleEditLead}
+                    onConvert={handleConvertLead}
+                  />
+                )}
 
-              {activeTab === 'produtos' && (
-                <ProdutosTab 
-                  produtos={filteredProdutos}
-                  representadas={filteredRepresentadas}
-                  onAdd={handleAddProduto}
-                  onEdit={handleEditProduto}
-                  onDelete={handleDeleteProduto}
-                  currentUser={currentUser}
-                />
-              )}
+                {activeTab === 'produtos' && (
+                  <ProdutosTab
+                    produtos={filteredProdutos}
+                    representadas={filteredRepresentadas}
+                    onAdd={handleAddProduto}
+                    onEdit={handleEditProduto}
+                    onDelete={handleDeleteProduto}
+                    currentUser={currentUser}
+                  />
+                )}
 
-              {activeTab === 'pedidos' && (
-                <PedidosTab 
-                  pedidos={filteredPedidos}
-                  clientes={filteredClientes}
-                  representadas={filteredRepresentadas}
-                  produtos={filteredProdutos}
-                  activePedidoToEdit={activePedidoToEdit}
-                  onClearActiveEdit={() => setActivePedidoToEdit(null)}
-                  onAdd={handleAddPedido}
-                  onEdit={handleEditPedido}
-                  onDelete={handleDeletePedido}
-                  empresaRepresentacao={activeEmpresa}
-                  currentUser={currentUser}
-                />
-              )}
+                {activeTab === 'pedidos' && (
+                  <PedidosTab
+                    pedidos={filteredPedidos}
+                    clientes={filteredClientes}
+                    representadas={filteredRepresentadas}
+                    produtos={filteredProdutos}
+                    activePedidoToEdit={activePedidoToEdit}
+                    onClearActiveEdit={() => setActivePedidoToEdit(null)}
+                    onAdd={handleAddPedido}
+                    onEdit={handleEditPedido}
+                    onDelete={handleDeletePedido}
+                    empresaRepresentacao={activeEmpresa}
+                    currentUser={currentUser}
+                  />
+                )}
 
-              {activeTab === 'financeiro' && (currentUser?.role === 'Administrador' || userPermissions.verFinanceiro) && (
-                <FinanceiroTab 
-                  pedidos={filteredPedidos}
-                  clientes={filteredClientes}
-                  representadas={filteredRepresentadas}
-                  onEditPedido={handleEditPedido}
-                  onDeletePedido={handleDeletePedido}
-                  currentUser={currentUser}
-                  empresaRepresentacao={activeEmpresa}
-                />
-              )}
+                {activeTab === 'financeiro' && (currentUser?.role === 'Administrador' || userPermissions.verFinanceiro) && (
+                  <FinanceiroTab
+                    pedidos={filteredPedidos}
+                    clientes={filteredClientes}
+                    representadas={filteredRepresentadas}
+                    onEditPedido={handleEditPedido}
+                    onDeletePedido={handleDeletePedido}
+                    currentUser={currentUser}
+                    empresaRepresentacao={activeEmpresa}
+                  />
+                )}
 
-              {activeTab === 'admin' && currentUser?.role === 'Administrador' && (
-                <AdminTab 
-                  empresas={empresas}
-                  usuarios={usuarios}
-                  activeEmpresaId={activeEmpresaId}
-                  currentUserId={currentUserId}
-                  onAddEmpresa={handleAddEmpresa}
-                  onEditEmpresa={handleEditEmpresa}
-                  onDeleteEmpresa={handleDeleteEmpresa}
-                  onAddUsuario={handleAddUsuario}
-                  onEditUsuario={handleEditUsuario}
-                  onDeleteUsuario={handleDeleteUsuario}
-                  onSelectEmpresa={handleSelectEmpresa}
-                  isSystemAdmin={systemAdmin}
-                />
-              )}
+                {activeTab === 'admin' && currentUser?.role === 'Administrador' && (
+                  <AdminTab
+                    empresas={empresas}
+                    usuarios={usuarios}
+                    activeEmpresaId={activeEmpresaId}
+                    currentUserId={currentUserId}
+                    onAddEmpresa={handleAddEmpresa}
+                    onEditEmpresa={handleEditEmpresa}
+                    onDeleteEmpresa={handleDeleteEmpresa}
+                    onAddUsuario={handleAddUsuario}
+                    onEditUsuario={handleEditUsuario}
+                    onDeleteUsuario={handleDeleteUsuario}
+                    onSelectEmpresa={handleSelectEmpresa}
+                    isSystemAdmin={systemAdmin}
+                  />
+                )}
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </div>
