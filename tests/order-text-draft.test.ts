@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { normalizeOrderTextDraft } from '../src/orderTextDraft';
+import { handleOrderTextDraftRequest } from '../src/orderTextDraftApi';
+
+describe('order text draft API authorization', () => {
+  it('rejects requests without a Firebase bearer token before calling external services', async () => {
+    assert.deepEqual(await handleOrderTextDraftRequest('', 'pedido'), {
+      status: 401,
+      body: { error: 'Entre novamente para gerar o rascunho.' },
+    });
+  });
+});
 
 describe('normalizeOrderTextDraft', () => {
   it('keeps a valid draft while trimming text and rejecting extra fields', () => {
