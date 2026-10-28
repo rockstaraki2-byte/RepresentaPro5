@@ -22,6 +22,18 @@ export interface CommissionCalculation {
   detalhes: Array<{ descricao: string; percentual: number; origem: 'regra' | 'pedido' }>;
 }
 
+export function serializeCommissionCsv(rows: Array<Array<string | number>>): string {
+  const escapeCell = (value: string | number) => {
+    const raw = String(value);
+    const safe = typeof value === 'string'
+      && (/^[\t\r\n]/.test(raw) || /^[\s\u200B\uFEFF]*[=+\-@]/u.test(raw))
+      ? `'${raw}`
+      : raw;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  return '\uFEFF' + rows.map((row) => row.map(escapeCell).join(';')).join('\r\n');
+}
+
 export function normalizeRuleValue(value: string | undefined): string {
   return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -214,7 +226,12 @@ export function parseCommissionInvoiceXml(content: string, pedidos: Pedido[]): I
   if (invoiceNodes.length === 0 || invoiceNodes.length > 50) throw new Error('O arquivo não contém de 1 a 50 notas NF-e.');
   return invoiceNodes.map((invoiceNode) => {
     const extra = firstElementText(invoiceNode, 'infCpl') || '';
-    const orderMatches = pedidos.filter((pedido) => extra.includes(pedido.numeroPedido));
+    const orderMatches = pedidos.filter((pedido) => {
+      const orderNumber = pedido.numeroPedido.trim();
+      if (!orderNumber) return false;
+      const escaped = orderNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(extra);
+    });
     const orderNumber = orderMatches.length === 1 ? orderMatches[0].numeroPedido : undefined;
     const totalRaw = firstElementText(invoiceNode, 'vNF');
     const valorNota = totalRaw ? Number(totalRaw) : undefined;

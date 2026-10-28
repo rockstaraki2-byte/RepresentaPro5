@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { CommissionRule, Pedido } from '../src/types';
-import { calculateExpectedCommission, calculateExpectedCommissionFromInvoice, parseCommissionCsv, parseCommissionInvoiceXml, resolveCommissionRate } from '../src/commissionReconciliation';
+import { calculateExpectedCommission, calculateExpectedCommissionFromInvoice, parseCommissionCsv, parseCommissionInvoiceXml, resolveCommissionRate, serializeCommissionCsv } from '../src/commissionReconciliation';
 
 const order: Pedido = {
   id: 'o-1', numeroPedido: 'PED-10', clienteId: 'c-1', representadaId: 'r-1', dataPedido: '2026-10-28',
@@ -62,6 +62,11 @@ describe('commission reconciliation', () => {
     });
   });
 
+  it('escapes formula-leading text in exported CSV but keeps numeric values numeric', () => {
+    const csv = serializeCommissionCsv([['=1+1', '+SUM(1,1)', '-texto', '@SUM(A1)', ' seguro'], [-12, 10]]);
+    assert.equal(csv, '\uFEFF"\'=1+1";"\'+SUM(1,1)";"\'-texto";"\'@SUM(A1)";" seguro"\r\n"-12";"10"');
+  });
+
   it('extracts invoice number, order reference, CNPJs, and product bases from NF-e XML nodes', () => {
     const element = (localName: string, text = '', children: any[] = []): any => ({
       localName,
@@ -85,7 +90,7 @@ describe('commission reconciliation', () => {
       value: class { parseFromString() { return { getElementsByTagName: (tag: string) => tag === '*' ? [invoiceNode, ...invoiceNode.getElementsByTagName('*')] : [] }; } },
     });
     try {
-      assert.deepEqual(parseCommissionInvoiceXml('<NFe/>', [order]), [{
+      assert.deepEqual(parseCommissionInvoiceXml('<NFe/>', [{ ...order, numeroPedido: 'PED-1' }, order]), [{
         numeroPedido: 'PED-10', numeroNota: '923', cnpjEmitente: '12345678000199',
         cnpjCliente: '98765432000199', valorNota: 450,
         itens: [{ codigo: 'A1', descricao: 'Produto A', valorProduto: 400 }],
