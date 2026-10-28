@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleOrderTextDraftRequest } from '../../src/orderTextDraftApi';
+import { handleOrderTextDraftRequest } from '../../src/orderTextDraftApi.js';
 
 type VercelRequest = IncomingMessage & { body?: unknown };
 

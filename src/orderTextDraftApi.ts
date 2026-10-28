@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { normalizeOrderTextDraft } from './orderTextDraft';
+import { normalizeOrderTextDraft } from './orderTextDraft.js';
 
 export interface OrderTextDraftApiResult {
   status: number;
