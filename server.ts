@@ -1,10 +1,11 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
+import { handleOrderTextDraftRequest } from './src/orderTextDraftApi';
 
 dotenv.config();
 
@@ -73,6 +74,13 @@ async function startServer() {
         error: error.message || 'An error occurred during content generation.' 
       });
     }
+  });
+
+  // Convert pasted WhatsApp order text into a reviewable draft. This endpoint
+  // never writes an order; the user must review and save it in the normal form.
+  app.post('/api/orders/parse-text', async (req, res) => {
+    const result = await handleOrderTextDraftRequest(req.header('authorization') || '', req.body?.text);
+    return res.status(result.status).json(result.body);
   });
 
   // Proxy CNPJ queries directly to BrasilAPI (Receita Federal)

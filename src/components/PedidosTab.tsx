@@ -5,6 +5,8 @@ import { Plus, Trash2, Edit3, Eye, FileText, Check, Percent, AlertCircle, Shoppi
 import { motion, AnimatePresence } from 'motion/react';
 import CatalogViewerModal from './CatalogViewerModal';
 import { getPdfFromIndexedDB } from '../lib/pdfStorage';
+import { auth } from '../firebase';
+import type { OrderTextDraft } from '../orderTextDraft';
 
 const normalizeSearchText = (value: string) =>
   value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -128,6 +130,11 @@ export default function PedidosTab({
 }: PedidosTabProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeCatalogViewer, setActiveCatalogViewer] = useState<{ url: string; title: string; filename?: string } | null>(null);
+  const [isOrderTextDraftOpen, setIsOrderTextDraftOpen] = useState(false);
+  const [orderText, setOrderText] = useState('');
+  const [parsedOrderTextDraft, setParsedOrderTextDraft] = useState<OrderTextDraft | null>(null);
+  const [isParsingOrderText, setIsParsingOrderText] = useState(false);
+  const [orderTextDraftError, setOrderTextDraftError] = useState('');
 
   const handleOpenCatalog = async (rep: Representada) => {
     let url = rep.catalogoUrl;
@@ -370,6 +377,103 @@ export default function PedidosTab({
         setTipoFaturamento('Nf 100%');
       }
     }
+  };
+
+  const handleParseOrderText = async () => {
+    setOrderTextDraftError('');
+    setParsedOrderTextDraft(null);
+    if (!orderText.trim()) {
+      setOrderTextDraftError('Cole o texto do pedido recebido por WhatsApp.');
+      return;
+    }
+    if (orderText.trim().length > 8000) {
+      setOrderTextDraftError('O texto deve ter até 8.000 caracteres.');
+      return;
+    }
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+      setOrderTextDraftError('Sua sessão expirou. Entre novamente para continuar.');
+      return;
+    }
+
+    setIsParsingOrderText(true);
+    try {
+      const token = await firebaseUser.getIdToken();
+      const response = await fetch('/api/orders/parse-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: orderText.trim() }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Não foi possível interpretar o texto.');
+      setParsedOrderTextDraft(result.draft as OrderTextDraft);
+    } catch (error) {
+      setOrderTextDraftError(error instanceof Error ? error.message : 'Falha ao gerar rascunho.');
+    } finally {
+      setIsParsingOrderText(false);
+    }
+  };
+
+  const handleApplyOrderTextDraft = () => {
+    if (!parsedOrderTextDraft) return;
+    const clean = (value: string) => normalizeSearchText(value);
+    const digits = (value: string) => value.replace(/\D/g, '');
+    const requestedDocument = digits(parsedOrderTextDraft.clienteDocumento || '');
+    const clientCandidates = clientes.filter((client) => {
+      if (requestedDocument) {
+        return digits(client.cnpj) === requestedDocument;
+      }
+      const requestedName = clean(parsedOrderTextDraft.cliente || '');
+      return requestedName && [client.nomeFantasia, client.razaoSocial].some((name) => clean(name) === requestedName);
+    });
+    const representedCandidates = representadas.filter((represented) => {
+      const requestedName = clean(parsedOrderTextDraft.representada || '');
+      return requestedName && [represented.nomeFantasia, represented.razaoSocial].some((name) => clean(name) === requestedName);
+    });
+    const matchedClient = clientCandidates.length === 1 ? clientCandidates[0] : undefined;
+    const matchedRepresented = representedCandidates.length === 1 ? representedCandidates[0] : undefined;
+    const matchedProducts = parsedOrderTextDraft.itens.map((draftItem) => {
+      if (!matchedRepresented) return undefined;
+      const requestedCode = clean(draftItem.codigo || '');
+      const requestedName = clean(draftItem.produto);
+      const candidates = produtos.filter((product) => product.ativo
+        && (!matchedRepresented || product.representadaId === matchedRepresented.id)
+        && (requestedCode
+          ? clean(product.codigo) === requestedCode
+          : [product.nome, ...(product.apelidos || [])].some((name) => clean(name) === requestedName)));
+      return candidates.length === 1 ? candidates[0] : undefined;
+    });
+
+    resetForm();
+    setEditingId(null);
+    setNumeroPedido(parsedOrderTextDraft.numeroPedido || '');
+    setClienteId(matchedClient?.id || '');
+    setRepresentadaId(matchedRepresented?.id || '');
+    setDataPedido(parsedOrderTextDraft.dataPedido || new Date().toISOString().slice(0, 10));
+    setCondicoesPagamento(parsedOrderTextDraft.condicoesPagamento || '');
+    setObservacoes(parsedOrderTextDraft.observacoes || '');
+    setTipoFaturamento(matchedClient?.tipoFaturamento || 'Nf 100%');
+    setComissaoPercentual(matchedRepresented?.comissaoPadrao ?? 5);
+    setStatus('Rascunho');
+    setItens(parsedOrderTextDraft.itens.map((item, index) => {
+      const product = matchedProducts[index];
+      const price = item.precoUnitario ?? product?.precoVenda ?? 0;
+      return {
+        id: `item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+        produtoId: product?.id,
+        codigo: item.codigo || product?.codigo || undefined,
+        descricao: item.produto,
+        cor: item.cor || product?.cor || undefined,
+        variacao: item.variacao || product?.variacao || undefined,
+        quantidade: item.quantidade,
+        precoUnitario: price,
+        totalItem: item.quantidade * price,
+        fotoUrl: product?.fotoUrl,
+      };
+    }));
+    setValidationError(null);
+    setIsFormOpen(true);
+    setIsOrderTextDraftOpen(false);
   };
 
   // Sync default commission % and default freight rule when represented company is selected (only when creating)
@@ -939,14 +1043,107 @@ ${empresaNome}`;
             <p className="text-[11px] text-slate-400">Gere novos pedidos de faturamento e envie comissões automáticas para sua carteira.</p>
           </div>
         </div>
-        <button
-          onClick={() => { resetForm(); setIsFormOpen(true); }}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-100"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Novo Pedido</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setOrderText('');
+              setParsedOrderTextDraft(null);
+              setOrderTextDraftError('');
+              setIsOrderTextDraftOpen(true);
+            }}
+            className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Ler pedido do WhatsApp</span>
+          </button>
+          <button
+            onClick={() => { resetForm(); setIsFormOpen(true); }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-100"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Pedido</span>
+          </button>
+        </div>
       </div>
+
+      <AnimatePresence>
+        {isOrderTextDraftOpen && (
+          <motion.div
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            role="presentation"
+          >
+            <motion.section
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="order-text-draft-title"
+              className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-4">
+                <div>
+                  <h3 id="order-text-draft-title" className="font-serif text-base font-bold text-slate-800">Rascunho de pedido por texto</h3>
+                  <p className="mt-1 text-xs text-slate-500">Cole a mensagem recebida no WhatsApp. A IA vai organizar os campos para revisão.</p>
+                </div>
+                <button onClick={() => setIsOrderTextDraftOpen(false)} className="rounded-lg px-2 py-1 text-xl font-bold text-slate-400 hover:bg-slate-200" aria-label="Fechar">×</button>
+              </div>
+              <div className="space-y-4 overflow-y-auto p-5">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold text-slate-700">Texto do pedido</span>
+                  <textarea
+                    value={orderText}
+                    onChange={(event) => { setOrderText(event.target.value); setParsedOrderTextDraft(null); setOrderTextDraftError(''); }}
+                    maxLength={8000}
+                    rows={7}
+                    placeholder={'Ex.: Cliente Loja Central, pedido 4821. Marca Alfa: 10 unidades do produto X, cor preta, R$ 120,00 cada. Pagamento 30/60 dias.'}
+                    className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:bg-white"
+                  />
+                  <span className="block text-right text-[10px] text-slate-400">{orderText.length}/8.000</span>
+                </label>
+                <p className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                  O texto será enviado ao serviço de IA para extração. Ele não cria nem salva o pedido. Confira cliente, representada, itens, quantidades e preços no formulário antes de salvar.
+                </p>
+                {orderTextDraftError && <div role="alert" className="rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-700">{orderTextDraftError}</div>}
+                {parsedOrderTextDraft && (
+                  <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-emerald-900">Confira o que foi identificado</h4>
+                      <p className="mt-1 text-[11px] text-emerald-800">Campos sem correspondência exata ficarão para seleção manual no formulário.</p>
+                    </div>
+                    <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                      <div><dt className="font-bold text-slate-500">Cliente</dt><dd className="text-slate-800">{parsedOrderTextDraft.cliente || 'Não identificado'}</dd></div>
+                      <div><dt className="font-bold text-slate-500">Representada</dt><dd className="text-slate-800">{parsedOrderTextDraft.representada || 'Não identificada'}</dd></div>
+                      <div><dt className="font-bold text-slate-500">Número do pedido</dt><dd className="text-slate-800">{parsedOrderTextDraft.numeroPedido || 'Será gerado ao selecionar um cliente'}</dd></div>
+                      <div><dt className="font-bold text-slate-500">Pagamento</dt><dd className="text-slate-800">{parsedOrderTextDraft.condicoesPagamento || 'Não identificado'}</dd></div>
+                    </dl>
+                    <div className="overflow-x-auto rounded-lg border border-emerald-100 bg-white">
+                      <table className="w-full min-w-[420px] text-left text-xs">
+                        <thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="px-3 py-2">Produto</th><th className="px-3 py-2">Qtd.</th><th className="px-3 py-2">Preço un.</th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">{parsedOrderTextDraft.itens.map((item, index) => (
+                          <tr key={`${item.produto}-${index}`}><td className="px-3 py-2 font-medium text-slate-800">{item.produto}{item.cor ? ` · ${item.cor}` : ''}{item.variacao ? ` · ${item.variacao}` : ''}</td><td className="px-3 py-2">{item.quantidade}</td><td className="px-3 py-2">{item.precoUnitario === null ? 'Verificar no formulário' : formatarMoeda(item.precoUnitario)}</td></tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-4 sm:flex-row sm:justify-end">
+                <button onClick={() => setIsOrderTextDraftOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+                {parsedOrderTextDraft ? (
+                  <button onClick={handleApplyOrderTextDraft} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700">Revisar no formulário</button>
+                ) : (
+                  <button onClick={handleParseOrderText} disabled={isParsingOrderText} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60">
+                    {isParsingOrderText ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {isParsingOrderText ? 'Lendo pedido…' : 'Gerar rascunho'}
+                  </button>
+                )}
+              </div>
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isFormOpen && (
