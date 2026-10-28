@@ -55,6 +55,18 @@ const order = (id, company, owner) => ({
   createdByUserId: owner,
 });
 
+const commissionRule = (id, company, createdBy, patch = {}) => ({
+  id,
+  empresaRepresentacaoId: company,
+  representadaId: 'rep-a',
+  percentual: 8,
+  ativa: true,
+  criadoPorUserId: createdBy,
+  criadoEm: '2026-10-28T10:00:00.000Z',
+  atualizadoEm: '2026-10-28T10:00:00.000Z',
+  ...patch,
+});
+
 const lead = (id, company, owner) => ({
   id,
   empresaRepresentacaoId: company,
@@ -84,9 +96,16 @@ beforeEach(async () => {
     await setDoc(doc(db, 'usuarios', 'manager-a-uid'), profile('manager-a-uid', 'manager-a@example.com', 'tenant-a', 'Vendedor', { gerenciarUsuarios: true }));
     await setDoc(doc(db, 'usuarios', 'admin-b'), profile('admin-b', 'admin-b@example.com', 'tenant-b', 'Administrador'));
     await setDoc(doc(db, 'usuarios', 'rep-a-uid'), profile('rep-a-uid', 'rep-a@example.com', 'tenant-a', 'Representante'));
+    await setDoc(doc(db, 'usuarios', 'finance-a-uid'), profile('finance-a-uid', 'finance-a@example.com', 'tenant-a', 'Vendedor', { verFinanceiro: true }));
     await setDoc(doc(db, 'usuarios', 'no-leads-uid'), profile('no-leads-uid', 'no-leads@example.com', 'tenant-a', 'Vendedor', { verLeads: false, editarLeads: false }));
     await setDoc(doc(db, 'clientes', 'client-a'), client('client-a', 'tenant-a'));
     await setDoc(doc(db, 'clientes', 'client-b'), client('client-b', 'tenant-b'));
+    await setDoc(doc(db, 'representadas', 'rep-a'), { id: 'rep-a', empresaRepresentacaoId: 'tenant-a' });
+    await setDoc(doc(db, 'representadas', 'rep-a2'), { id: 'rep-a2', empresaRepresentacaoId: 'tenant-a' });
+    await setDoc(doc(db, 'representadas', 'rep-b'), { id: 'rep-b', empresaRepresentacaoId: 'tenant-b' });
+    await setDoc(doc(db, 'produtos', 'product-a'), { id: 'product-a', empresaRepresentacaoId: 'tenant-a', representadaId: 'rep-a' });
+    await setDoc(doc(db, 'produtos', 'product-a2'), { id: 'product-a2', empresaRepresentacaoId: 'tenant-a', representadaId: 'rep-a2' });
+    await setDoc(doc(db, 'produtos', 'product-b'), { id: 'product-b', empresaRepresentacaoId: 'tenant-b', representadaId: 'rep-b' });
     await setDoc(doc(db, 'pedidos', 'order-seller-a'), order('order-seller-a', 'tenant-a', 'seller-a-uid'));
     await setDoc(doc(db, 'pedidos', 'order-seller-b'), order('order-seller-b', 'tenant-a', 'someone-else'));
     await setDoc(doc(db, 'pedidos', 'order-tenant-b'), order('order-tenant-b', 'tenant-b', 'other-uid'));
@@ -128,6 +147,41 @@ test('enforces tenant scope and edit permissions for writes', async () => {
   await assertSucceeds(setDoc(doc(db, 'clientes', 'new-client-a'), client('new-client-a', 'tenant-a')));
   await assertFails(setDoc(doc(db, 'clientes', 'new-client-b'), client('new-client-b', 'tenant-b')));
   await assertFails(updateDoc(doc(db, 'clientes', 'client-a'), { empresaRepresentacaoId: 'tenant-b' }));
+});
+
+test('scopes commission rules to finance users and restricts rule writes to tenant administrators', async () => {
+  const managerDb = environment.authenticatedContext('admin-a', {
+    email: 'admin-a@example.com', email_verified: true,
+  }).firestore();
+  const financeDb = environment.authenticatedContext('finance-a-uid', {
+    email: 'finance-a@example.com', email_verified: true,
+  }).firestore();
+  const rule = commissionRule('commission-a', 'tenant-a', 'admin-a', { clienteId: 'client-a', produtoId: 'product-a', condicaoPagamento: '30/60' });
+
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'regras_comissao', 'commission-b'), commissionRule('commission-b', 'tenant-b', 'admin-b', { representadaId: 'rep-b' }));
+  });
+
+  await assertSucceeds(setDoc(doc(managerDb, 'regras_comissao', rule.id), rule));
+  const tenantRules = await assertSucceeds(getDocs(query(
+    collection(financeDb, 'regras_comissao'), where('empresaRepresentacaoId', '==', 'tenant-a'),
+  )));
+  assert.equal(tenantRules.size, 1);
+  await assertFails(getDocs(collection(financeDb, 'regras_comissao')));
+  await assertSucceeds(getDoc(doc(financeDb, 'regras_comissao', rule.id)));
+  await assertFails(getDoc(doc(financeDb, 'regras_comissao', 'commission-b')));
+  await assertFails(setDoc(doc(financeDb, 'regras_comissao', 'seller-rule'), commissionRule('seller-rule', 'tenant-a', 'finance-a-uid')));
+
+  await assertFails(setDoc(doc(managerDb, 'regras_comissao', 'cross-tenant'), commissionRule('cross-tenant', 'tenant-b', 'admin-a', { representadaId: 'rep-b' })));
+  await assertFails(setDoc(doc(managerDb, 'regras_comissao', 'foreign-client'), commissionRule('foreign-client', 'tenant-a', 'admin-a', { clienteId: 'client-b' })));
+  await assertFails(setDoc(doc(managerDb, 'regras_comissao', 'foreign-product'), commissionRule('foreign-product', 'tenant-a', 'admin-a', { produtoId: 'product-b' })));
+  await assertFails(setDoc(doc(managerDb, 'regras_comissao', 'wrong-representada-product'), commissionRule('wrong-representada-product', 'tenant-a', 'admin-a', { produtoId: 'product-a2' })));
+  await assertFails(setDoc(doc(managerDb, 'regras_comissao', 'extra-field'), { ...rule, secret: 'unexpected' }));
+  await assertFails(updateDoc(doc(managerDb, 'regras_comissao', rule.id), { criadoEm: '2099-01-01T00:00:00.000Z' }));
+  await assertSucceeds(updateDoc(doc(managerDb, 'regras_comissao', rule.id), { percentual: 9, atualizadoEm: '2026-10-28T11:00:00.000Z' }));
+  await assertFails(deleteDoc(doc(financeDb, 'regras_comissao', rule.id)));
+  await assertSucceeds(deleteDoc(doc(managerDb, 'regras_comissao', rule.id)));
 });
 
 test('lets a tenant administrator manage only profiles in the same tenant', async () => {

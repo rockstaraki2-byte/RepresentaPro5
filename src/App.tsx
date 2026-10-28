@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { formatarMoeda, getUserPermissions } from './utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Representada, Cliente, Lead, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao } from './types';
+import { Representada, Cliente, Lead, Pedido, MetaVendas, Produto, Usuario, EmpresaRepresentacao, CommissionRule } from './types';
 import { auth, isSystemAdminAccount } from './firebase-app';
 import type { TenantScope } from './firebase';
 import {
@@ -74,6 +74,7 @@ export default function App() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>(() => isDemoMode ? DEMO_PEDIDOS : []);
   const [meta, setMeta] = useState<MetaVendas>(() => isDemoMode ? DEMO_METAS : { metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7) });
+  const [commissionRules, setCommissionRules] = useState<CommissionRule[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>(() => isDemoMode ? DEMO_PRODUTOS : []);
   const [empresas, setEmpresas] = useState<EmpresaRepresentacao[]>(() => isDemoMode ? DEMO_EMPRESAS : []);
   const [activeEmpresaId, setActiveEmpresaId] = useState<string>(() => isDemoMode ? DEMO_EMPRESA_ID : '');
@@ -286,6 +287,7 @@ export default function App() {
       setLeads([]);
       setPedidos([]);
       setProdutos([]);
+      setCommissionRules([]);
       setEmpresas([]);
       setUsuarios([]);
       return;
@@ -309,6 +311,7 @@ export default function App() {
     setLeads([]);
     setPedidos([]);
     setProdutos([]);
+    setCommissionRules([]);
     setEmpresas([]);
     setUsuarios([currentUser]);
 
@@ -321,7 +324,8 @@ export default function App() {
       firebaseServices.getEmpresas(scope),
       firebaseServices.getUsuarios(scope, currentUser, canManageUsers),
       dataPermissions.verFinanceiro ? firebaseServices.getMeta(scope) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
-    ])).then(([repData, cliData, leadData, pedData, prodData, empData, usrData, metaData]) => {
+      dataPermissions.verFinanceiro ? firebaseServices.getCommissionRules(scope) : Promise.resolve([]),
+    ])).then(([repData, cliData, leadData, pedData, prodData, empData, usrData, metaData, commissionRuleData]) => {
       if (cancelled) return;
       setRepresentadas(repData);
       setClientes(cliData);
@@ -331,6 +335,7 @@ export default function App() {
       setEmpresas(empData);
       setUsuarios(usrData);
       setMeta(metaData);
+      setCommissionRules(commissionRuleData);
       setErrorMessage(null);
       setHasPermissionError(false);
     }).catch((error: any) => {
@@ -433,6 +438,7 @@ export default function App() {
           const matching = scope.tenantId === 'all' ? snapshot.docs[0] : snapshot.docs.find((item: any) => item.data().empresaRepresentacaoId === scope.tenantId);
           if (matching) setMeta(matching.data() as MetaVendas);
         });
+        subscribe('regras_comissao', (snapshot) => setCommissionRules(snapshot.docs.map((item: any) => item.data() as CommissionRule)));
       }
     }).catch((error: any) => {
       if (!cancelled) console.warn('Não foi possível iniciar as atualizações em tempo real.', error?.code || 'unknown');
@@ -721,6 +727,43 @@ export default function App() {
     if (!isDemoMode) await (await loadFirebaseServices()).saveMeta(newMeta);
   };
 
+  const handleSaveCommissionRule = async (rule: CommissionRule) => {
+    const targetTenantId = systemAdmin ? activeEmpresaId : (currentUser?.empresaRepresentacaoId || '');
+    if (!currentUser || currentUser.role !== 'Administrador' || !targetTenantId || targetTenantId === 'all'
+      || rule.empresaRepresentacaoId !== targetTenantId) {
+      throw new Error('A regra não pertence a uma empresa autorizada.');
+    }
+    const previous = commissionRules;
+    setCommissionRules((current) => current.some((item) => item.id === rule.id)
+      ? current.map((item) => item.id === rule.id ? rule : item)
+      : [rule, ...current]);
+    if (isDemoMode) return;
+    try {
+      await (await loadFirebaseServices()).saveCommissionRule(rule);
+    } catch (error) {
+      setCommissionRules(previous);
+      throw error;
+    }
+  };
+
+  const handleDeleteCommissionRule = async (id: string) => {
+    const targetTenantId = systemAdmin ? activeEmpresaId : (currentUser?.empresaRepresentacaoId || '');
+    const existing = commissionRules.find((rule) => rule.id === id);
+    if (!currentUser || currentUser.role !== 'Administrador' || targetTenantId === 'all'
+      || !existing || existing.empresaRepresentacaoId !== targetTenantId) {
+      throw new Error('A regra não pertence a uma empresa autorizada.');
+    }
+    const previous = commissionRules;
+    setCommissionRules((current) => current.filter((rule) => rule.id !== id));
+    if (isDemoMode) return;
+    try {
+      await (await loadFirebaseServices()).deleteCommissionRule(id);
+    } catch (error) {
+      setCommissionRules(previous);
+      throw error;
+    }
+  };
+
   // Transition helper from dashboard view link
   const handleViewAndEditPedido = (pedido: Pedido) => {
     setActivePedidoToEdit(pedido);
@@ -742,7 +785,7 @@ export default function App() {
     };
     try {
       const firebaseServices = await loadFirebaseServices();
-      const [repData, cliData, leadData, pedData, prodData, empData, usrData, metaData] = await Promise.all([
+      const [repData, cliData, leadData, pedData, prodData, empData, usrData, metaData, commissionRuleData] = await Promise.all([
         getUserPermissions(currentUser).verRepresentadas ? firebaseServices.getRepresentadas(scope, true) : Promise.resolve([]),
         getUserPermissions(currentUser).verClientes ? firebaseServices.getClientes(scope, true) : Promise.resolve([]),
         getUserPermissions(currentUser).verLeads ? firebaseServices.getLeads(scope, currentUser, true) : Promise.resolve([]),
@@ -751,6 +794,7 @@ export default function App() {
         firebaseServices.getEmpresas(scope, true),
         firebaseServices.getUsuarios(scope, currentUser, canManageUsers, true),
         getUserPermissions(currentUser).verFinanceiro ? firebaseServices.getMeta(scope, true) : Promise.resolve({ metaMensal: 0, anoMes: new Date().toISOString().slice(0, 7), empresaRepresentacaoId: scope.tenantId }),
+        getUserPermissions(currentUser).verFinanceiro ? firebaseServices.getCommissionRules(scope, true) : Promise.resolve([]),
       ]);
       setRepresentadas(repData);
       setClientes(cliData);
@@ -760,6 +804,7 @@ export default function App() {
       setEmpresas(empData);
       setUsuarios(usrData);
       setMeta(metaData);
+      setCommissionRules(commissionRuleData);
       alert('Dados atualizados a partir do Firestore para a empresa autorizada.');
     } catch (error: any) {
       console.error('Falha ao atualizar dados:', error);
@@ -1278,8 +1323,13 @@ export default function App() {
                     pedidos={filteredPedidos}
                     clientes={filteredClientes}
                     representadas={filteredRepresentadas}
+                    produtos={filteredProdutos}
+                    commissionRules={commissionRules}
+                    tenantId={activeEmpresaId}
                     onEditPedido={handleEditPedido}
                     onDeletePedido={handleDeletePedido}
+                    onSaveCommissionRule={handleSaveCommissionRule}
+                    onDeleteCommissionRule={handleDeleteCommissionRule}
                     currentUser={currentUser}
                     empresaRepresentacao={activeEmpresa}
                   />

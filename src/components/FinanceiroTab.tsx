@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Pedido, Cliente, Representada } from '../types';
+import { Pedido, Cliente, Representada, Produto, CommissionRule } from '../types';
 import { formatarMoeda, formatarData } from '../utils';
 import { 
   DollarSign, 
@@ -17,7 +17,8 @@ import {
   TrendingUp,
   TrendingDown,
   Percent,
-  Coins
+  Coins,
+  ClipboardCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -32,13 +33,19 @@ import {
   BarChart, 
   Bar 
 } from 'recharts';
+import CommissionReconciliationTab from './CommissionReconciliationTab';
 
 interface FinanceiroTabProps {
   pedidos: Pedido[];
   clientes: Cliente[];
   representadas: Representada[];
+  produtos: Produto[];
+  commissionRules: CommissionRule[];
+  tenantId: string;
   onEditPedido: (pedido: Pedido) => Promise<void>;
   onDeletePedido: (id: string) => Promise<void>;
+  onSaveCommissionRule: (rule: CommissionRule) => Promise<void>;
+  onDeleteCommissionRule: (id: string) => Promise<void>;
   currentUser?: any;
   empresaRepresentacao?: any;
 }
@@ -60,12 +67,17 @@ export default function FinanceiroTab({
   pedidos,
   clientes,
   representadas,
+  produtos,
+  commissionRules,
+  tenantId,
   onEditPedido,
   onDeletePedido,
+  onSaveCommissionRule,
+  onDeleteCommissionRule,
   currentUser,
   empresaRepresentacao
 }: FinanceiroTabProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'comissoes' | 'provisionamento'>('comissoes');
+  const [activeSubTab, setActiveSubTab] = useState<'comissoes' | 'provisionamento' | 'conciliacao'>('comissoes');
   
   // Collapsible Filters State
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
@@ -355,6 +367,17 @@ export default function FinanceiroTab({
           <Calendar className="w-4 h-4" />
           <span>Provisionamento Financeiro</span>
         </button>
+        <button
+          onClick={() => { setActiveSubTab('conciliacao'); setIsFiltersExpanded(false); }}
+          className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+            activeSubTab === 'conciliacao'
+              ? 'border-emerald-600 text-emerald-700 font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ClipboardCheck className="w-4 h-4" />
+          <span>Conciliação</span>
+        </button>
       </div>
 
       {activeSubTab === 'comissoes' ? (
@@ -628,7 +651,7 @@ export default function FinanceiroTab({
           </div>
 
         </div>
-      ) : (
+      ) : activeSubTab === 'provisionamento' ? (
         <div className="space-y-4">
           
           {/* Header Action Bar */}
@@ -969,6 +992,18 @@ export default function FinanceiroTab({
           </div>
 
         </div>
+      ) : (
+        <CommissionReconciliationTab
+          pedidos={pedidos}
+          clientes={clientes}
+          representadas={representadas}
+          produtos={produtos}
+          rules={commissionRules}
+          tenantId={tenantId}
+          currentUser={currentUser}
+          onSaveRule={onSaveCommissionRule}
+          onDeleteRule={onDeleteCommissionRule}
+        />
       )}
 
       {/* Commission Edit Modal */}

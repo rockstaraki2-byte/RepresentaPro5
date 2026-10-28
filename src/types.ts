@@ -114,6 +114,21 @@ export interface MetaVendas {
   empresaRepresentacaoId?: string; // Multi-tenant link
 }
 
+/** A tenant-scoped rule used to estimate and reconcile commissions. */
+export interface CommissionRule {
+  id: string;
+  empresaRepresentacaoId: string;
+  representadaId: string;
+  clienteId?: string;
+  produtoId?: string;
+  condicaoPagamento?: string;
+  percentual: number;
+  ativa: boolean;
+  criadoPorUserId: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 export interface Produto {
   id: string;
   codigo: string;         // SKU ou Código interno

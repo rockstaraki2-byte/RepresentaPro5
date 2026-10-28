@@ -14,6 +14,7 @@
     "test:lead-date": "tsx tests/lead-date.test.ts",
     "test:lead-payload": "tsx --test tests/lead-firestore-payload.test.ts",
     "test:order-text-draft": "node --import tsx --test tests/order-text-draft.test.ts",
+    "test:commission-reconciliation": "node --import tsx --test tests/commission-reconciliation.test.ts",
     "test:firestore-rules": "npx --yes firebase-tools@14.27.0 emulators:exec --project demo-representapro-security --only firestore \"node tests/firestore.rules.test.mjs\"",
     "audit:firestore-tenants": "node scripts/audit-firestore-tenant-readiness.mjs",
     "cleanup:firestore-secrets": "node scripts/cleanup-firestore-sensitive-fields.mjs"
