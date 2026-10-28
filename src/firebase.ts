@@ -32,6 +32,7 @@ import type {
   EmpresaRepresentacao,
   Usuario,
   MetaVendas,
+  CommissionRule,
 } from './types';
 import { prepareLeadForCreate } from './leadFirestorePayload';
 import { app, auth, isSystemAdminAccount } from './firebase-app';
@@ -544,6 +545,27 @@ export async function saveMeta(meta: MetaVendas): Promise<void> {
     await setDoc(doc(db, 'meta', id), removeUndefinedFields({ ...meta, id }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'meta');
+  }
+}
+
+export async function getCommissionRules(scope: TenantScope, forceServer = false): Promise<CommissionRule[]> {
+  return getTenantRecords<CommissionRule>('regras_comissao', scope, forceServer);
+}
+
+export async function saveCommissionRule(rule: CommissionRule): Promise<void> {
+  if (!rule.id || !rule.empresaRepresentacaoId) throw new Error('A regra de comissão precisa estar vinculada à empresa.');
+  try {
+    await setDoc(doc(db, 'regras_comissao', rule.id), removeUndefinedFields(rule));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'regras_comissao');
+  }
+}
+
+export async function deleteCommissionRule(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'regras_comissao', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'regras_comissao');
   }
 }
 
