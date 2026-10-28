@@ -386,6 +386,49 @@ service cloud.firestore {
         && data.empresaRepresentacaoId is string && hasNoSensitiveFields(data);
     }
 
+    function sameTenantRepresentada(id, tenantId) {
+      let ref = /databases/$(database)/documents/representadas/$(id);
+      return validId(id) && exists(ref)
+        && get(ref).data.get('empresaRepresentacaoId', '') == tenantId;
+    }
+
+    function sameTenantCliente(id, tenantId) {
+      let ref = /databases/$(database)/documents/clientes/$(id);
+      return validId(id) && exists(ref)
+        && get(ref).data.get('empresaRepresentacaoId', '') == tenantId;
+    }
+
+    function productBelongsToRepresentada(id, tenantId, representadaId) {
+      let ref = /databases/$(database)/documents/produtos/$(id);
+      return validId(id) && exists(ref)
+        && get(ref).data.get('empresaRepresentacaoId', '') == tenantId
+        && get(ref).data.get('representadaId', '') == representadaId;
+    }
+
+    function validCommissionRule(data, id) {
+      return validTenantRecord(data, id)
+        && data.keys().hasOnly([
+          'id', 'empresaRepresentacaoId', 'representadaId', 'clienteId', 'produtoId',
+          'condicaoPagamento', 'percentual', 'ativa', 'criadoPorUserId', 'criadoEm', 'atualizadoEm'
+        ])
+        && data.keys().hasAll([
+          'representadaId', 'percentual', 'ativa', 'criadoPorUserId', 'criadoEm', 'atualizadoEm'
+        ])
+        && data.representadaId is string
+        && sameTenantRepresentada(data.representadaId, data.empresaRepresentacaoId)
+        && (!data.keys().hasAny(['clienteId'])
+          || (data.clienteId is string && sameTenantCliente(data.clienteId, data.empresaRepresentacaoId)))
+        && (!data.keys().hasAny(['produtoId'])
+          || (data.produtoId is string && productBelongsToRepresentada(data.produtoId, data.empresaRepresentacaoId, data.representadaId)))
+        && (!data.keys().hasAny(['condicaoPagamento'])
+          || (data.condicaoPagamento is string && data.condicaoPagamento.size() <= 200))
+        && data.percentual is number && data.percentual >= 0 && data.percentual <= 100
+        && data.ativa is bool
+        && data.criadoPorUserId is string && data.criadoPorUserId.size() > 0 && data.criadoPorUserId.size() <= 128
+        && data.criadoEm is string && data.criadoEm.size() <= 40
+        && data.atualizadoEm is string && data.atualizadoEm.size() <= 40;
+    }
+
     function isLegacyPasswordCleanup(id) {
       return signedIn() && resource.data.id == id
         && resource.data.email == request.auth.token.email
@@ -543,6 +586,26 @@ service cloud.firestore {
         && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
         && isTenantAdmin() && canAccessTenant(resource.data.empresaRepresentacaoId);
       allow delete: if isTenantAdmin() && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
+    }
+
+    match /regras_comissao/{id} {
+      allow get, list: if canAccessTenant(resource.data.get('empresaRepresentacaoId', ''))
+        && permissionEnabled('verFinanceiro', false);
+      allow create: if validCommissionRule(request.resource.data, id)
+        && request.resource.data.criadoPorUserId == request.auth.uid
+        && isTenantAdmin()
+        && canAccessTenant(request.resource.data.empresaRepresentacaoId);
+      allow update: if validCommissionRule(request.resource.data, id)
+        && request.resource.data.empresaRepresentacaoId == resource.data.empresaRepresentacaoId
+        && request.resource.data.criadoPorUserId == resource.data.criadoPorUserId
+        && request.resource.data.criadoEm == resource.data.criadoEm
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'representadaId', 'clienteId', 'produtoId', 'condicaoPagamento', 'percentual', 'ativa', 'atualizadoEm'
+        ])
+        && isTenantAdmin()
+        && canAccessTenant(resource.data.empresaRepresentacaoId);
+      allow delete: if isTenantAdmin()
+        && canAccessTenant(resource.data.get('empresaRepresentacaoId', ''));
     }
 
     match /teste_conexao/{id} {
