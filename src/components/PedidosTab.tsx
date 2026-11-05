@@ -802,12 +802,16 @@ ${empresaNome}`;
       const pdfBase64 = parts[1] || parts[0];
       const pdfFilename = `Pedido_${emailPedido.numeroPedido}_${rep?.nomeFantasia || 'Venda'}.pdf`;
 
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error('Entre novamente para enviar o pedido.');
       const response = await fetch('/api/email/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
+          orderId: emailPedido.id,
           to: emailRecipient,
           subject: emailSubject,
           body: emailBody,
