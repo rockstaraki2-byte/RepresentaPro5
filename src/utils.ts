@@ -1,4 +1,5 @@
 import { Usuario, UserPermissions } from './types';
+import { auth } from './firebase';
 
 export function getUserPermissions(user?: Usuario): Required<UserPermissions> {
   const isAdmin = user?.role === 'Administrador';
@@ -153,9 +154,14 @@ export const consultarCNPJ = async (rawCnpj: string): Promise<any> => {
 
   // 1. Tentar primeiro o endpoint do nosso backend (Express)
   try {
-    const response = await fetch(`/api/cnpj/${cnpj}`);
-    if (response.ok) {
-      return await response.json();
+    const idToken = await auth.currentUser?.getIdToken();
+    if (idToken) {
+      const response = await fetch(`/api/cnpj/${cnpj}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (response.ok) {
+        return await response.json();
+      }
     }
   } catch (err) {
     console.warn('Endpoint do backend indisponível (ex: Vercel estático). Tentando consulta direta...', err);
