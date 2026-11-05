@@ -53,6 +53,15 @@ As novas regras e o novo fluxo de autenticação são incompatíveis com a vers�
 
 A ativação desta PR foi concluída em 2026-10-21: frontend em `https://representa-pro5.vercel.app`, índices prontos, regras publicadas e provedores de autenticação habilitados. A validação ponta a ponta com contas reais permanece pendente.
 
-## Escopo que continua pendente
+## Estado das pendências de segurança (2026-11-05)
 
-As rotas Express em `server.ts` foram mantidas sem alteração conforme a autorização recebida. Autenticação nessas rotas, limitação de requisições, limites de anexos e de consumo de IA precisam de uma alteração separada. Até lá, `/api/email/send`, `/api/cnpj/:cnpj` e `/api/gemini/generate` não ganham proteção por este PR. O cliente deixa de enviar credenciais SMTP por tenant; o envio atual só poderá usar as credenciais globais já configuradas no servidor.
+- Esta alteração endurece o servidor Express: exige token Firebase válido e perfil ativo vinculado a tenant nas rotas de IA, consulta de CNPJ e envio de e-mail. A permissão de criar pedidos e a vinculação do destinatário ao cliente ou à representada do pedido são verificadas antes do envio. A alteração está em PR e ainda não foi publicada.
+- Os limites do servidor ficam em 32 KB para JSON comum e 8 KB para formulários. O envio de e-mail aceita até 7 MB no corpo e 5 MB para um PDF validado; credenciais SMTP só podem vir de variáveis do servidor.
+- O uso de IA fica limitado a 10 chamadas por usuário/hora, a 8.000 caracteres por prompt e a 2.048 tokens de saída. Consultas de CNPJ ficam limitadas a 40 por usuário/hora e e-mails a 10 por usuário/hora.
+- Esses contadores são locais a cada processo. Se o backend for escalado para várias instâncias serverless, adicionar um limitador compartilhado no edge ou Redis.
+- O teste de produção em 2026-11-05 encontrou apenas /api/orders/parse-text no Vercel (GET retorna 405, conforme esperado); /api/email/send e /api/gemini/generate retornaram 404. As rotas Express endurecidas ainda não estão servidas pela implantação Vercel atual.
+- No Supabase AI Office, tabelas, funções e sequências existentes em public não concedem acesso a anon ou authenticated. Os privilégios padrão para novos objetos foram reduzidos a service_role; o acesso do servidor permanece. As tabelas têm RLS habilitado e não possuem políticas porque o acesso acontece pelo backend.
+- A extensão pg_net continua instalada no projeto com privilégios pertencentes a supabase_admin; o papel administrativo usado na revisão não é dono desses objetos. O esquema net não está exposto no Data API. A migração registrada como restrict_pg_net_to_server_roles não conseguiu alterar esses privilégios e permanece no histórico como uma tentativa sem efeito; ela não reduziu nem ampliou o acesso efetivo.
+- A revogação das senhas de app do Gmail que foram removidas do Firestore continua pendente. O titular precisa revogá-las nas configurações de segurança do Google.
+- App Check é inicializado no código quando há uma chave reCAPTCHA, mas a chave de produção e o enforcement ainda não foram confirmados.
+- O cache persistente do Firestore permanece sem criptografia da aplicação para preservar a abertura offline já solicitada. Um aparelho compartilhado pode mostrar os últimos dados carregados até a sessão ser encerrada online; definir bloqueio offline e criptografia exigirá um fluxo específico que preserve a sincronização.
