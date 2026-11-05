@@ -1,18 +1,21 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import { handleOrderTextDraftRequest } from './src/orderTextDraftApi';
+import { authorizeRepresentaApiUser, canCreateOrders, consumeApiRateLimit, isOrderEmailRecipientAllowed } from './src/apiSecurity';
 
 dotenv.config();
 
 async function startServer() {
   const app = express();
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  // Bound ordinary API payloads; PDF mail attachments get a separate 7 MB ceiling.
+  app.use('/api/email/send', express.json({ limit: '7mb' }));
+  app.use(express.json({ limit: '32kb' }));
+  app.use(express.urlencoded({ limit: '8kb', extended: false, parameterLimit: 20 }));
 
   // Lazy-loaded Gemini Client helper
   let aiClient: GoogleGenAI | null = null;
@@ -36,43 +39,51 @@ async function startServer() {
 
   // --- API Endpoints ---
 
-  // Main Gemini endpoint for writing assistance and content generation
+  // Main Gemini endpoint for authenticated, bounded writing assistance.
   app.post('/api/gemini/generate', async (req, res) => {
+    const user = await authorizeRepresentaApiUser(req.header('authorization') || '');
+    if (!user) return res.status(401).json({ error: 'Entre novamente para continuar.' });
+    if (!consumeApiRateLimit('gemini', user.uid, 10, 60 * 60 * 1000)) {
+      return res.status(429).json({ error: 'Limite de uso de IA atingido. Tente novamente mais tarde.' });
+    }
+
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as Record<string, unknown>
+      : {};
+    const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : '';
+    if (!prompt || prompt.length > 8000) {
+      return res.status(400).json({ error: 'Informe um texto com até 8.000 caracteres.' });
+    }
+    const temperature = payload.temperature === undefined ? 0.7 : payload.temperature;
+    if (typeof temperature !== 'number' || !Number.isFinite(temperature) || temperature < 0 || temperature > 1) {
+      return res.status(400).json({ error: 'Parâmetro de criatividade inválido.' });
+    }
+    const responseMimeType = payload.responseMimeType;
+    if (responseMimeType !== undefined
+      && responseMimeType !== 'application/json'
+      && responseMimeType !== 'text/plain') {
+      return res.status(400).json({ error: 'Formato de resposta inválido.' });
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'Serviço de IA indisponível neste ambiente.' });
+    }
+
     try {
-      const { prompt, systemInstruction, temperature, responseMimeType, responseSchema } = req.body;
-      
-      if (!prompt) {
-        return res.status(400).json({ error: 'Prompt is required' });
-      }
-
-      const ai = getGeminiClient();
-
-      // Configure generation parameters
-      const config: any = {
-        systemInstruction: systemInstruction || "You are a helpful, creative literary writing assistant.",
-        temperature: temperature !== undefined ? temperature : 0.7,
+      const config: Record<string, unknown> = {
+        systemInstruction: 'Você é um assistente de escrita comercial do RepresentaPRO. Gere respostas objetivas e seguras.',
+        temperature,
+        maxOutputTokens: 2048,
       };
-
-      if (responseMimeType) {
-        config.responseMimeType = responseMimeType;
-      }
-      if (responseSchema) {
-        config.responseSchema = responseSchema;
-      }
-
-      const response = await ai.models.generateContent({
+      if (responseMimeType) config.responseMimeType = responseMimeType;
+      const response = await getGeminiClient().models.generateContent({
         model: 'gemini-3.5-flash',
         contents: prompt,
         config,
       });
-
-      const text = response.text;
-      return res.json({ text });
-    } catch (error: any) {
-      console.error('Gemini API Error:', error);
-      return res.status(500).json({ 
-        error: error.message || 'An error occurred during content generation.' 
-      });
+      return res.json({ text: response.text || '' });
+    } catch {
+      console.error('Gemini generation failed');
+      return res.status(502).json({ error: 'Falha temporária ao gerar o conteúdo.' });
     }
   });
 
@@ -83,163 +94,168 @@ async function startServer() {
     return res.status(result.status).json(result.body);
   });
 
-  // Proxy CNPJ queries directly to BrasilAPI (Receita Federal)
+  // CNPJ proxy for authenticated, bounded lookups.
   app.get('/api/cnpj/:cnpj', async (req, res) => {
+    const user = await authorizeRepresentaApiUser(req.header('authorization') || '');
+    if (!user) return res.status(401).json({ error: 'Entre novamente para continuar.' });
+    if (!consumeApiRateLimit('cnpj', user.uid, 40, 60 * 60 * 1000)) {
+      return res.status(429).json({ error: 'Limite de consultas atingido. Tente novamente mais tarde.' });
+    }
+
+    const cnpj = String(req.params.cnpj || '').replace(/\D/g, '');
+    if (cnpj.length !== 14) {
+      return res.status(400).json({ error: 'CNPJ inválido. Deve conter exatamente 14 dígitos.' });
+    }
+
+    const mapBrasilApi = (data: any) => ({
+      ...data,
+      razao_social: data.razao_social || data.razaoSocial || '',
+      nome_fantasia: data.nome_fantasia || data.nomeFantasia || data.razao_social || '',
+      telefone1: data.ddd_telefone_1 || data.telefone1 || '',
+      telefone2: data.ddd_telefone_2 || '',
+      email: data.email || '',
+      logradouro: data.logradouro || '',
+      numero: data.numero || '',
+      bairro: data.bairro || '',
+      municipio: data.municipio || '',
+      uf: data.uf || '',
+      cnae_fiscal_descricao: data.cnae_fiscal_descricao || '',
+    });
+
     try {
-      const cnpj = req.params.cnpj.replace(/\D/g, '');
-      if (cnpj.length !== 14) {
-        return res.status(400).json({ error: 'CNPJ inválido. Deve conter exatamente 14 dígitos.' });
-      }
-
-      console.log(`Buscando CNPJ: ${cnpj} no BrasilAPI...`);
-      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
-      
-      if (!response.ok) {
-        throw new Error(`BrasilAPI retornou status ${response.status}`);
-      }
-
-      const data = await response.json();
-      const mapped = {
-        ...data,
-        razao_social: data.razao_social || data.razaoSocial || '',
-        nome_fantasia: data.nome_fantasia || data.nomeFantasia || data.razao_social || '',
-        telefone1: data.ddd_telefone_1 || data.telefone1 || '',
-        telefone2: data.ddd_telefone_2 || '',
-        email: data.email || '',
-        logradouro: data.logradouro || '',
-        numero: data.numero || '',
-        bairro: data.bairro || '',
-        municipio: data.municipio || '',
-        uf: data.uf || '',
-        cnae_fiscal_descricao: data.cnae_fiscal_descricao || ''
-      };
-      return res.json(mapped);
-    } catch (error: any) {
-      console.warn('Erro ao consultar CNPJ no BrasilAPI, tentando backup:', error.message);
-      
-      // Fallback API: CNPJ.ws
-      try {
-        const cnpj = req.params.cnpj.replace(/\D/g, '');
-        const backupResponse = await fetch(`https://publica.cnpj.ws/cnpj/${cnpj}`);
-        if (backupResponse.ok) {
-          const backupData = await backupResponse.json();
-          // Map to BrasilAPI-like structure so the frontend can read it transparently
-          const mapped = {
-            cnpj: backupData.cnpj,
-            razao_social: backupData.razao_social,
-            nome_fantasia: backupData.estabelecimento.nome_fantasia || backupData.razao_social,
-            telefone1: (backupData.estabelecimento.ddd1 && backupData.estabelecimento.telefone1) 
-              ? `${backupData.estabelecimento.ddd1}${backupData.estabelecimento.telefone1}` 
-              : '',
-            email: backupData.estabelecimento.email || '',
-            logradouro: backupData.estabelecimento.logradouro || '',
-            numero: backupData.estabelecimento.numero || '',
-            bairro: backupData.estabelecimento.bairro || '',
-            municipio: backupData.estabelecimento.cidade?.nome || '',
-            uf: backupData.estabelecimento.estado?.sigla || '',
-            cnae_fiscal_descricao: backupData.estabelecimento.atividade_principal?.descricao || ''
-          };
-          console.log('CNPJ retornado com sucesso da API de Backup.');
-          return res.json(mapped);
-        }
-      } catch (backupError: any) {
-        console.error('Erro no backup CNPJ:', backupError.message);
-      }
-
-      return res.status(500).json({ 
-        error: 'Erro ao buscar o CNPJ na Receita Federal. Por favor, verifique o número ou tente preencher manualmente.' 
+      const response = await fetch('https://brasilapi.com.br/api/cnpj/v1/' + cnpj, {
+        signal: AbortSignal.timeout(5000),
       });
+      if (response.ok) return res.json(mapBrasilApi(await response.json()));
+    } catch {
+      // The fixed backup endpoint below is used when BrasilAPI is unavailable.
+    }
+
+    try {
+      const backupResponse = await fetch('https://publica.cnpj.ws/cnpj/' + cnpj, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (backupResponse.ok) {
+        const backupData = await backupResponse.json() as any;
+        const establishment = backupData.estabelecimento || {};
+        return res.json({
+          cnpj: backupData.cnpj,
+          razao_social: backupData.razao_social || '',
+          nome_fantasia: establishment.nome_fantasia || backupData.razao_social || '',
+          telefone1: establishment.ddd1 && establishment.telefone1 ? establishment.ddd1 + establishment.telefone1 : '',
+          email: establishment.email || '',
+          logradouro: establishment.logradouro || '',
+          numero: establishment.numero || '',
+          bairro: establishment.bairro || '',
+          municipio: establishment.cidade?.nome || '',
+          uf: establishment.estado?.sigla || '',
+          cnae_fiscal_descricao: establishment.atividade_principal?.descricao || '',
+        });
+      }
+    } catch {
+      // Return a generic upstream error without exposing vendor diagnostics.
+    }
+
+    return res.status(502).json({ error: 'Não foi possível consultar o CNPJ agora.' });
+  });
+
+  // Send a sales-order copy. Credentials are server-only; request bodies can never supply them.
+  app.post('/api/email/send', async (req, res) => {
+    const user = await authorizeRepresentaApiUser(req.header('authorization') || '');
+    if (!user) return res.status(401).json({ error: 'Entre novamente para continuar.' });
+    if (!canCreateOrders(user)) {
+      return res.status(403).json({ error: 'Seu perfil não pode enviar pedidos.' });
+    }
+    if (!consumeApiRateLimit('email', user.uid, 10, 60 * 60 * 1000)) {
+      return res.status(429).json({ error: 'Limite de envios atingido. Tente novamente mais tarde.' });
+    }
+
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as Record<string, unknown>
+      : {};
+    const to = typeof payload.to === 'string' ? payload.to.trim() : '';
+    const subject = typeof payload.subject === 'string' ? payload.subject.replace(/[\r\n]/g, ' ').trim() : '';
+    const body = typeof payload.body === 'string' ? payload.body : '';
+    if (!to || to.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)
+      || !subject || subject.length > 180
+      || !body.trim() || body.length > 20000) {
+      return res.status(400).json({ error: 'Confira destinatário, assunto e conteúdo do e-mail.' });
+    }
+
+    const orderId = typeof payload.orderId === 'string' ? payload.orderId : '';
+    const authorization = req.header('authorization') || '';
+    if (!await isOrderEmailRecipientAllowed(authorization, user, orderId, to)) {
+      return res.status(403).json({ error: 'O destinatário não está vinculado a este pedido.' });
+    }
+
+    let attachmentBuffer: Buffer | undefined;
+    const attachment = payload.attachment;
+    if (attachment !== undefined && attachment !== null && attachment !== '') {
+      if (typeof attachment !== 'string' || attachment.length > 7 * 1024 * 1024) {
+        return res.status(413).json({ error: 'O anexo excede o limite de 5 MB.' });
+      }
+      const base64 = attachment.startsWith('data:application/pdf;base64,')
+        ? attachment.slice('data:application/pdf;base64,'.length)
+        : attachment;
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) {
+        return res.status(400).json({ error: 'O anexo PDF está em formato inválido.' });
+      }
+      attachmentBuffer = Buffer.from(base64, 'base64');
+      if (attachmentBuffer.length > 5 * 1024 * 1024
+        || attachmentBuffer.toString('ascii', 0, 5) !== '%PDF-') {
+        return res.status(400).json({ error: 'O anexo precisa ser um PDF de até 5 MB.' });
+      }
+    }
+
+    const gmailUser = process.env.GMAIL_USER;
+    const gmailPass = process.env.GMAIL_APP_PASS;
+    if (!gmailUser || !gmailPass) {
+      return res.status(501).json({
+        error: 'Envio pelo servidor não está configurado. Use o aplicativo de e-mail do aparelho.',
+        needsFallback: true,
+      });
+    }
+
+    const requestedName = typeof payload.fromName === 'string' ? payload.fromName : 'RepresentaPRO';
+    const fromName = requestedName.replace(/[\r\n"\\]/g, '').trim().slice(0, 80) || 'RepresentaPRO';
+    const rawFilename = typeof payload.attachmentName === 'string' ? payload.attachmentName : 'pedido.pdf';
+    const filename = rawFilename.split(/[\\/]/).pop()?.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100) || 'pedido.pdf';
+    const safeFilename = filename.toLowerCase().endsWith('.pdf') ? filename : filename + '.pdf';
+
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: gmailUser, pass: gmailPass },
+      });
+      const mailOptions: any = {
+        from: '"' + fromName + '" <' + gmailUser + '>',
+        to,
+        subject,
+        text: body,
+      };
+      if (attachmentBuffer) {
+        mailOptions.attachments = [{
+          filename: safeFilename,
+          content: attachmentBuffer,
+          contentType: 'application/pdf',
+        }];
+      }
+      await transporter.sendMail(mailOptions);
+      return res.json({ success: true, message: 'Cópia do pedido enviada por e-mail.' });
+    } catch {
+      console.error('Order email delivery failed');
+      return res.status(502).json({ error: 'Falha temporária ao enviar o e-mail.' });
     }
   });
 
-  // Send sales order copy via email
-  app.post('/api/email/send', async (req, res) => {
-    try {
-      const { to, subject, body, attachment, attachmentName, gmailUser: bodyGmailUser, gmailAppPass: bodyGmailPass, fromName: bodyFromName } = req.body;
-      if (!to || !subject || !body) {
-        return res.status(400).json({ error: 'Os campos "to", "subject" e "body" são obrigatórios.' });
-      }
-
-      // Use the tenant-specific credentials passed in the body if available; otherwise fallback to env
-      const gmailUser = bodyGmailUser || process.env.GMAIL_USER;
-      const gmailPass = bodyGmailPass || process.env.GMAIL_APP_PASS;
-      const fromName = bodyFromName || process.env.SMTP_FROM_NAME || 'RepresentaPRO';
-
-      console.log(`========================================`);
-      console.log(`[EMAIL SENDING SERVICE]`);
-      console.log(`Destinatário: ${to}`);
-      console.log(`Assunto: ${subject}`);
-      console.log(`Gmail Remetente: ${gmailUser || 'Não configurado'}`);
-      console.log(`Origem das credenciais: ${bodyGmailUser ? 'Empresa (Multi-Tenant)' : 'Servidor (Global)'}`);
-      console.log(`Anexo recebido: ${attachment ? 'Sim' : 'Não'} (${attachmentName || 'sem nome'})`);
-      console.log(`========================================`);
-
-      if (gmailUser && gmailPass) {
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: gmailUser,
-            pass: gmailPass,
-          },
-        });
-
-        const mailOptions: any = {
-          from: `"${fromName}" <${gmailUser}>`,
-          to,
-          subject,
-          text: body,
-        };
-
-        if (attachment) {
-          let cleanBase64 = attachment;
-          if (cleanBase64.includes('%')) {
-            try {
-              cleanBase64 = decodeURIComponent(cleanBase64);
-            } catch (e) {
-              console.warn('Falha ao decodificar URI do anexo:', e);
-            }
-          }
-          if (cleanBase64.includes('base64,')) {
-            cleanBase64 = cleanBase64.split('base64,')[1];
-          }
-          // Remove any potential whitespace or newlines that might disrupt decoding
-          cleanBase64 = cleanBase64.replace(/\s/g, '');
-
-          mailOptions.attachments = [
-            {
-              filename: attachmentName || 'pedido.pdf',
-              content: Buffer.from(cleanBase64, 'base64'),
-              contentType: 'application/pdf',
-            }
-          ];
-        }
-
-        await transporter.sendMail(mailOptions);
-
-        return res.json({ 
-          success: true, 
-          message: 'Cópia do pedido enviada por e-mail com o anexo PDF!' 
-        });
-      } else {
-        // No email credentials configured
-        return res.status(501).json({
-          error: 'Credenciais de e-mail não foram configuradas. Por favor, adicione o E-mail e a Senha de App na aba Admin (ao editar sua Empresa) ou nas configurações (Secrets) do sistema.',
-          needsFallback: true
-        });
-      }
-    } catch (error: any) {
-      console.error('Erro ao processar envio de e-mail:', error);
-      let errorMessage = error.message || 'Erro interno ao processar o e-mail.';
-      if (typeof errorMessage === 'string' && (
-        errorMessage.includes('534-5.7.9') || 
-        errorMessage.includes('Application-specific password required') || 
-        errorMessage.includes('Invalid login') || 
-        errorMessage.includes('EAUTH')
-      )) {
-        errorMessage = 'Falha de login no Gmail (Erro 534/EAUTH). Como a conta possui Verificação em Duas Etapas ativa, você DEVE gerar e cadastrar uma "Senha de App" de 16 dígitos nas configurações de segurança do Google (myaccount.google.com -> Segurança -> Senhas de app) e utilizá-la em vez de sua senha padrão do Gmail.';
-      }
-      return res.status(500).json({ error: errorMessage });
+  app.use((error: any, _req: any, res: any, next: any) => {
+    if (error?.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'A requisição excede o limite permitido.' });
     }
+    if (error instanceof SyntaxError && 'body' in error) {
+      return res.status(400).json({ error: 'O corpo da requisição está malformado.' });
+    }
+    return next(error);
   });
 
   // --- Serve Frontend ---
